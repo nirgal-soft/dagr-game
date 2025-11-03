@@ -14,6 +14,7 @@ use tile::Tile;
 
 use dagr_lib::ems;
 use dagr_lib::db::connection;
+use dagr_lib::components::world::hex::Hex;
 use dagr_lib::core::registry::{EntityKind, FactoryRegistry};
 use dagr_lib::bootstrap::{build_factor_registry, AppConfig};
 use hecs::{World, Entity};
@@ -24,8 +25,8 @@ async fn main() -> Result<()> {
   let mut world = Arc::new(Mutex::new(World::new()));
   let registry = Arc::new(build_factor_registry(AppConfig{pool: pool.clone(), world_seed: 0})?);
   let entity_manager = ems::entity_manager::EntityManager::new(pool.clone(), world.clone(), registry);
-  let rg = region_gen::RegionGenerator::new(entity_manager);
-  let hexes = ems::load::load(&pool, world.clone()).await;
+  let rg = region_gen::RegionGenerator::new(entity_manager.clone());
+  let hexes = ems::load::load(&pool, world.clone()).await?;
 
   let mut stdout = io::stdout();
   terminal::enable_raw_mode()?;
@@ -52,6 +53,8 @@ async fn main() -> Result<()> {
 
   for hex in hexes{
     println!("{:?}: ", hex);
+    let hd = entity_manager.get_component::<Hex, _>(hex);
+    println!("{:?}", hd);
   }
 
   Ok(())
