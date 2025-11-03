@@ -12,7 +12,7 @@ use input::{Action, InputManager};
 use object::Object;
 use tile::Tile;
 
-use dagr_lib::ems::entity_manager::EntityManager;
+use dagr_lib::ems;
 use dagr_lib::db::connection;
 use dagr_lib::core::registry::{EntityKind, FactoryRegistry};
 use dagr_lib::bootstrap::{build_factor_registry, AppConfig};
@@ -21,11 +21,11 @@ use hecs::{World, Entity};
 #[tokio::main]
 async fn main() -> Result<()> {
   let pool = Arc::new(connection::establish_connection().await?);
-  let world = Arc::new(Mutex::new(World::new()));
+  let mut world = Arc::new(Mutex::new(World::new()));
   let registry = Arc::new(build_factor_registry(AppConfig{pool: pool.clone(), world_seed: 0})?);
-  let entity_manager = EntityManager::new(pool, world, registry);
-  let hex = entity_manager.create_entity(EntityKind::Hex, json!({"x": 5, "y": 10})).await?;
+  let entity_manager = ems::entity_manager::EntityManager::new(pool.clone(), world.clone(), registry);
   let rg = region_gen::RegionGenerator::new(entity_manager);
+  let hexes = ems::load::load(&pool, world.clone()).await;
 
   let mut stdout = io::stdout();
   terminal::enable_raw_mode()?;
@@ -49,7 +49,10 @@ async fn main() -> Result<()> {
   execute!(stdout, cursor::Show)?;
   terminal::disable_raw_mode()?;
   stdout.flush()?;
-  println!("created hex: {:?}", hex);
+
+  for hex in hexes{
+    println!("{:?}: ", hex);
+  }
 
   Ok(())
 }
