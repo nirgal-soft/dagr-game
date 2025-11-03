@@ -1,0 +1,12 @@
+[package]
+name = "dagr_game"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+crossterm = "0.29.0"
+dagr-lib = {path = "../dagr/dagr-lib"}
+hecs = "0.10.5"
+serde_json = "1.0.145"
+tokio = "1.48.0"
