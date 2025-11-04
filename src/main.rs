@@ -8,6 +8,8 @@ mod map;
 mod object;
 mod tile;
 mod region_gen;
+mod renderer;
+mod game_state;
 use input::{Action, InputManager};
 use object::Object;
 use tile::Tile;
