@@ -1,36 +1,49 @@
 use std::sync::{Arc, Mutex};
 use hecs::World;
 use dagr_lib::components::world::{
-  hex::HexData,
-  spatial::SpatialData
+  hex::Hex,
+  spatial::Spatial
 };
+use dagr_lib::ems::{entity_manager::EntityManager, component::Component};
 use crate::map::Map;
+use crate::tile::Tile;
 
 pub struct GameState{
-  pub world: Arc<Mutex<World>>,
+  pub entity_manager: EntityManager,
   pub map: Map,
   pub camera_x: i32,
   pub camera_y: i32,
 }
 
 impl GameState{
-  pub fn new(world: Arc<Mutex<World>>) -> Self{
+  pub fn new(entity_manager: EntityManager) -> Self{
     let mut state = Self{
-      world,
+      entity_manager,
       map: Map::new(),
       camera_x: 0,
       camera_y: 0,
     };
     state.rebuild_map();
+    state.attach_tiles();
     state
   }
 
   pub fn rebuild_map(&mut self){
     self.map.clear();
-    let world = self.world.lock().unwrap();
+    self.entity_manager.for_each::<(&Hex, &Spatial), _>(|entity, (_hex, spatial) |{
+      self.map.insert((spatial.get().x, spatial.get().y), entity);
+    });
+  }
 
-    for(entity, (_hex, spatial)) in world.query::<(&HexData, &SpatialData)>().iter(){
-      self.map.insert((spatial.get_x(), spatial.get_y()), entity);
+  pub fn attach_tiles(&mut self){
+    let mut tiles = Vec::new();
+    self.entity_manager.for_each::<&Hex, _>(|entity, hex|{
+      tiles.push((entity, Tile::from_terrain_type(&hex.get())));
+    });
+
+    let mut world = self.entity_manager.world.lock().unwrap();
+    for (entity, tile) in tiles{
+      world.insert_one(entity, tile).ok();
     }
   }
 }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use hecs::Entity;
 
+#[derive(Clone, Debug)]
 pub struct Map{
   grid: HashMap<(i32, i32), Entity>,
 }

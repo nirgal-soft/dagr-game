@@ -16,6 +16,7 @@ use tile::Tile;
 
 use dagr_lib::ems;
 use dagr_lib::db::connection;
+use dagr_lib::components::world::hex::HexData;
 use dagr_lib::components::world::hex::Hex;
 use dagr_lib::core::registry::{EntityKind, FactoryRegistry};
 use dagr_lib::bootstrap::{build_factor_registry, AppConfig};
@@ -25,38 +26,45 @@ use hecs::{World, Entity};
 async fn main() -> Result<()> {
   let pool = Arc::new(connection::establish_connection().await?);
   let mut world = Arc::new(Mutex::new(World::new()));
-  let registry = Arc::new(build_factor_registry(AppConfig{pool: pool.clone(), world_seed: 0})?);
-  let entity_manager = ems::entity_manager::EntityManager::new(pool.clone(), world.clone(), registry);
+  let registry = Arc::new(build_factor_registry(AppConfig{
+    pool: pool.clone(),
+    world_seed: 0
+    })?);
+
+  let entity_manager = ems::entity_manager::EntityManager::new(
+    pool.clone(),
+    world.clone(),
+    registry
+  );
+
   let rg = region_gen::RegionGenerator::new(entity_manager.clone());
-  let hexes = ems::load::load(&pool, world.clone()).await?;
+  let _hexes = ems::load::load(&pool, entity_manager.world.clone()).await?;
+
+  let mut game_state = game_state::GameState::new(entity_manager);
 
   let mut stdout = io::stdout();
   terminal::enable_raw_mode()?;
-  execute!(stdout, terminal::EnterAlternateScreen)?;
-  execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
-  execute!(stdout, cursor::Hide)?;
+  execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide)?;
+
+  let renderer = renderer::Renderer::new(150, 40);
   let input = InputManager::new();
-  let mut objects: Vec<Object> = vec![];
-  objects.push(Object::new(Tile::new('@', Color::Green), 10, 10));
 
   loop{
     std::thread::sleep(std::time::Duration::from_millis(16));
-    render(&stdout, &objects)?;
-    let action = input.poll_input();
-    match action{
+    renderer.render(&mut stdout, &game_state)?;
+
+    match input.poll_input(){
       Action::Quit => break,
       _ => {},
     }
   }
-  execute!(stdout, terminal::LeaveAlternateScreen)?;
-  execute!(stdout, cursor::Show)?;
+  execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show)?;
   terminal::disable_raw_mode()?;
   stdout.flush()?;
 
-  for hex in hexes{
-    println!("{:?}: ", hex);
-    let hd = entity_manager.get_component::<Hex, _>(hex);
-    println!("{:?}", hd);
+  let mut world = game_state.entity_manager.world.lock().unwrap();
+  for (entity, hex_data) in world.query::<&HexData>().iter(){
+    println!("{:?}: {:?}", entity, hex_data);
   }
 
   Ok(())
