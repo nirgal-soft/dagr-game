@@ -7,6 +7,8 @@ use crate::input::{Action, InputManager};
 use crate::object::Object;
 use crate::tile::Tile;
 use crate::game_state::GameState;
+use crate::ui::draw_box;
+use crate::ui::border_style::BorderStyle;
 use dagr_lib::ems;
 use dagr_lib::db::connection;
 use dagr_lib::components::world::hex::HexData;
@@ -57,6 +59,7 @@ impl Renderer{
     
     write!(stdout, "{}", buffer)?;
     stdout.flush()?;
+    draw_box(stdout, 0, 0, self.width, self.height, BorderStyle::SINGLE)?;
     Ok(())
   }
 

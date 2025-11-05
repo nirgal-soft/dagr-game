@@ -5,6 +5,7 @@ use crossterm::{execute, queue, cursor, terminal, style::{self, Stylize, Color}}
 use serde_json::json;
 mod input;
 mod map;
+mod ui;
 mod object;
 mod tile;
 mod region_gen;
@@ -29,7 +30,8 @@ async fn main() -> Result<()> {
   let registry = Arc::new(build_factor_registry(AppConfig{
     pool: pool.clone(),
     world_seed: 0
-    })?);
+    })?
+  );
 
   let entity_manager = ems::entity_manager::EntityManager::new(
     pool.clone(),
@@ -37,10 +39,11 @@ async fn main() -> Result<()> {
     registry
   );
 
-  let rg = region_gen::RegionGenerator::new(entity_manager.clone());
+  // let mut rg = region_gen::RegionGenerator::new(entity_manager.clone());
+  // rg.generate().await?;
   let _hexes = ems::load::load(&pool, entity_manager.world.clone()).await?;
 
-  let mut game_state = game_state::GameState::new(entity_manager);
+  let game_state = game_state::GameState::new(entity_manager);
 
   let mut stdout = io::stdout();
   terminal::enable_raw_mode()?;
