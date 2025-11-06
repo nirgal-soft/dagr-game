@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use hecs::Entity;
 
 #[derive(Clone, Debug)]
-pub struct Map{
+pub struct WorldMap{
   grid: HashMap<(i32, i32), Entity>,
 }
 
-impl Map{
+impl WorldMap{
   pub fn new() -> Self{
     Self{grid: HashMap::new()}
   }
@@ -21,5 +21,9 @@ impl Map{
 
   pub fn clear(&mut self){
     self.grid.clear();
+  }
+
+  pub fn count(&self) -> usize{
+    self.grid.len()
   }
 }

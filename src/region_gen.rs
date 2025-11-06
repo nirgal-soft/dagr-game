@@ -1,11 +1,8 @@
 use anyhow::Result;
 use serde_json::json;
 use dagr_lib::ems::entity_manager::EntityManager;
-use dagr_lib::db::connection;
-use dagr_lib::components::world::hex::{Hex, HexData};
-use dagr_lib::core::registry::{EntityKind, FactoryRegistry};
-use dagr_lib::bootstrap::{build_factor_registry, AppConfig};
-use hecs::{World, Entity};
+use dagr_lib::components::world::hex::Hex;
+use dagr_lib::core::registry::EntityKind;
 
 pub struct RegionGenerator{
   pub entity_manager: EntityManager,

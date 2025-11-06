@@ -43,6 +43,10 @@ impl InputManager{
       KeyCode::Down | KeyCode::Char('j') => Action::Move(0, 1),
       KeyCode::Left | KeyCode::Char('h') => Action::Move(-1, 0),
       KeyCode::Right | KeyCode::Char('l') => Action::Move(1, 0),
+      KeyCode::Char('y') => Action::Move(-1, -1),
+      KeyCode::Char('u') => Action::Move(1, -1),
+      KeyCode::Char('b') => Action::Move(-1, 1),
+      KeyCode::Char('n') => Action::Move(1, 1),
 
       KeyCode::Char('q') => Action::Quit,
 

@@ -1,78 +1,62 @@
-use std::io::{Write, self};
-use std::sync::{Arc, Mutex};
+use std::io::Write;
 use anyhow::Result;
-use crossterm::{execute, queue, cursor, terminal, style::{self, Stylize, Color}};
-use serde_json::json;
-use crate::input::{Action, InputManager};
-use crate::object::Object;
+use crossterm::{queue, cursor, style::{self, Stylize, Color}};
 use crate::tile::Tile;
 use crate::game_state::GameState;
-use crate::ui::draw_box;
-use crate::ui::border_style::BorderStyle;
-use dagr_lib::ems;
-use dagr_lib::db::connection;
-use dagr_lib::components::world::hex::HexData;
-use dagr_lib::core::registry::{EntityKind, FactoryRegistry};
-use dagr_lib::bootstrap::{build_factor_registry, AppConfig};
-use hecs::{World, Entity};
+use crate::ui::{panel::Panel, stat_bar::StatBar, map::Map};
 
 pub struct Renderer{
   width: u16,
   height: u16,
+  map_height: u16,
 }
 
 impl Renderer{
   pub fn new(width: u16, height: u16) -> Self{
-    Self{width, height,}
+    Self{width, height, map_height: height/2}
   }
 
   pub fn render(&self, stdout: &mut std::io::Stdout, game_state: &GameState) -> Result<()>{
-    let mut buffer = String::new();
-    for y in 0..self.height{
-      for x in 0..self.width{
-        if(y == 0 || y == self.height-1) || (x ==0 || x == self.width-1){
-          buffer.push_str(&format!("{}{}", cursor::MoveTo(x, y), "#".white()));
+    let map = Map::new(0, 0, self.width, self.height/2);
+
+    map.draw(stdout, |x, y|{
+      let world_x = x as i32 + game_state.camera.x;
+      let world_y = y as i32 + game_state.camera.y;
+
+      if world_x == game_state.player_x && world_y == game_state.player_y{
+        return Some(('@', Color::Blue));
+      }
+
+      match game_state.map.get((world_x, world_y)){
+        Some(entity) => {
+          game_state.entity_manager.with::<Tile, _, _>(
+            entity,
+            |tile| (tile.symbol, tile.color)
+          ).ok()
+        }
+        None => {
+          Some(('░', Color::DarkGrey))
         }
       }
-    }
+    })?;
 
-    for y in 1..self.height-1{
-      for x in 1..self.width-1{
-        let world_x = x as i32 + game_state.camera_x;
-        let world_y = y as i32 + game_state.camera_y;
-        buffer.push_str(&format!("{}", cursor::MoveTo(x, y)));
+    let stat_bar = StatBar::new(1, 51, "HP".to_string(), 45, 100, 20);
+    stat_bar.draw(stdout)?;
 
-        if let Some(hex_entity) = game_state.map.get((world_x, world_y)){
-          if let Ok(tile) = game_state.entity_manager.with::<Tile, _, _>(
-            hex_entity,
-            |tile| tile.clone()
-          ){
-            buffer.push_str(&format!("{}{}", style::SetForegroundColor(tile.color), tile.symbol));
-          }else{
-            buffer.push_str(&format!("{}", "?".white()));
-          }
-        }else{
-          buffer.push_str(&format!("{}", " ".white()));
-        }
-      }
-    }
-    
-    write!(stdout, "{}", buffer)?;
+    let hexes_explored = game_state.map.count();
+    let stats = vec![
+      format!("pos: ({}, {})", game_state.player_x, game_state.player_y),
+      format!("cam: ({}, {})", game_state.camera.x, game_state.camera.y),
+      format!("explored: {}", hexes_explored),
+      "STR: 14".to_string(),
+      "DEX: 16".to_string(),
+      "CON: 12".to_string(),
+    ];
+    let mut panel = Panel::new(1, 53, 20, 8);
+    panel.set_title("Stats".to_string());
+    panel.set_content(stats);
+    panel.draw(stdout)?;
     stdout.flush()?;
-    draw_box(stdout, 0, 0, self.width, self.height, BorderStyle::SINGLE)?;
-    Ok(())
-  }
-
-  fn render_hex(&self,
-    stdout: &mut std::io::Stdout,
-    entity: Entity,
-    world: &World
-  ) -> Result<()>{
-    if let Ok(tile) = world.get::<&Tile>(entity){
-      execute!(stdout, style::SetForegroundColor(tile.color))?;
-      write!(stdout, "{}", tile.symbol)?;
-    }
-
     Ok(())
   }
 }

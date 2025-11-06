@@ -1,31 +1,74 @@
-use std::sync::{Arc, Mutex};
-use hecs::World;
+use anyhow::Result;
+use serde_json::json;
 use dagr_lib::components::world::{
   hex::Hex,
   spatial::Spatial
 };
+use dagr_lib::core::registry::EntityKind;
 use dagr_lib::ems::{entity_manager::EntityManager, component::Component};
-use crate::map::Map;
+use crate::camera::Camera;
+use crate::world_map::WorldMap;
 use crate::tile::Tile;
 
 pub struct GameState{
   pub entity_manager: EntityManager,
-  pub map: Map,
-  pub camera_x: i32,
-  pub camera_y: i32,
+  pub map: WorldMap,
+  pub camera: Camera,
+  pub player_x: i32,
+  pub player_y: i32,
 }
 
 impl GameState{
-  pub fn new(entity_manager: EntityManager) -> Self{
+  pub fn new(entity_manager: EntityManager, view_w: u16, view_h: u16) -> Self{
     let mut state = Self{
       entity_manager,
-      map: Map::new(),
-      camera_x: 0,
-      camera_y: 0,
+      map: WorldMap::new(),
+      camera: Camera::new(view_w, view_h),
+      player_x: 0,
+      player_y: 0,
     };
     state.rebuild_map();
     state.attach_tiles();
     state
+  }
+
+  pub async fn move_player(&mut self, dx: i32, dy: i32) -> Result<()>{
+    let new_x = self.player_x + dx;
+    let new_y = self.player_y + dy;
+
+    if self.map.get((new_x, new_y)).is_none(){
+      self.generate_hex_at(new_x, new_y).await?;
+    }
+
+    self.player_x = new_x;
+    self.player_y = new_y;
+    self.camera.center_on(new_x, new_y);
+
+    Ok(())
+  }
+
+  pub async fn generate_hex_at(&mut self, x: i32, y: i32) -> Result<()>{
+    let prev = self.map.get((x-1, y))
+      .and_then(|entity| self.entity_manager.get_component::<Hex, _>(entity).ok());
+
+    let entity = self.entity_manager.create_entity(
+      EntityKind::Hex,
+      json!({
+        "x": x,
+        "y": y,
+        "prev": prev
+      })
+    ).await?;
+
+    self.map.insert((x, y), entity);
+
+    if let Ok(hex) = self.entity_manager.get_component::<Hex, _>(entity){
+      let tile = Tile::from_terrain_type(&hex);
+      let mut world = self.entity_manager.world.lock().unwrap();
+      world.insert_one(entity, tile).ok();
+    }
+
+    Ok(())
   }
 
   pub fn rebuild_map(&mut self){
