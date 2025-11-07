@@ -8,5 +8,6 @@ anyhow = "1.0.100"
 crossterm = "0.29.0"
 dagr-lib = {path = "../dagr/dagr-lib"}
 hecs = "0.10.5"
+rand = "0.9.2"
 serde_json = "1.0.145"
 tokio = "1.48.0"

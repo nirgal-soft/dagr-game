@@ -1,14 +1,25 @@
-use anyhow::Result;
+use std::collections::HashMap;
+use anyhow::{anyhow, Result};
+use hecs::Entity;
 use serde_json::json;
 use dagr_lib::components::world::{
   hex::Hex,
-  spatial::Spatial
+  spatial::Spatial,
+  wilderness::Wilderness
 };
+use dagr_lib::components::world::hex::HexData;
 use dagr_lib::core::registry::EntityKind;
 use dagr_lib::ems::{entity_manager::EntityManager, component::Component};
 use crate::camera::Camera;
-use crate::world_map::WorldMap;
 use crate::tile::Tile;
+use crate::wilderness_generator::{WildernessArea, WildernessGenerator};
+use crate::world_map::WorldMap;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ViewMode{
+  HexMap,
+  Wilderness(Entity),
+}
 
 pub struct GameState{
   pub entity_manager: EntityManager,
@@ -16,6 +27,8 @@ pub struct GameState{
   pub camera: Camera,
   pub player_x: i32,
   pub player_y: i32,
+  pub view_mode: ViewMode,
+  wilderness_cache: HashMap<Entity, WildernessArea>,
 }
 
 impl GameState{
@@ -26,6 +39,8 @@ impl GameState{
       camera: Camera::new(view_w, view_h),
       player_x: 0,
       player_y: 0,
+      view_mode: ViewMode::HexMap,
+      wilderness_cache: HashMap::new(),
     };
     state.rebuild_map();
     state.attach_tiles();
@@ -35,14 +50,31 @@ impl GameState{
   pub async fn move_player(&mut self, dx: i32, dy: i32) -> Result<()>{
     let new_x = self.player_x + dx;
     let new_y = self.player_y + dy;
+    let mut can_move = true;
 
-    if self.map.get((new_x, new_y)).is_none(){
-      self.generate_hex_at(new_x, new_y).await?;
+    match self.view_mode{
+      ViewMode::HexMap => {
+        if self.map.get((new_x, new_y)).is_none(){
+          self.generate_hex_at(new_x, new_y).await?;
+        }
+      }
+      ViewMode::Wilderness(hex_entity) => {
+        can_move = false;
+      }
     }
 
-    self.player_x = new_x;
-    self.player_y = new_y;
-    self.camera.center_on(new_x, new_y);
+    if can_move{
+      self.player_x = new_x;
+      self.player_y = new_y;
+      self.camera.center_on(new_x, new_y);
+    }
+
+    Ok(())
+  }
+
+  pub async fn enter_wilderness(&mut self) -> Result<()>{
+    let hex_entity = self.map.get((self.player_x, self.player_y))
+      .ok_or(anyhow!("No hex found at player position"))?;
 
     Ok(())
   }
@@ -69,6 +101,14 @@ impl GameState{
     }
 
     Ok(())
+  }
+
+  pub fn get_current_hex(&self) -> Result<HexData>{
+    let hex_entity = self.entity_manager.find_entity_at::<Hex>(self.player_x, self.player_y);
+    match hex_entity{
+      Some(entity) => self.entity_manager.get_component::<Hex, _>(entity),
+      None => Err(anyhow!("No hex found at player position")),
+    }
   }
 
   pub fn rebuild_map(&mut self){

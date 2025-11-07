@@ -9,6 +9,7 @@ mod region_gen;
 mod renderer;
 mod ui;
 mod tile;
+mod wilderness_generator;
 mod world_map;
 use input::{Action, InputManager};
 

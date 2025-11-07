@@ -2,7 +2,7 @@ use crossterm::style::Color;
 use dagr_lib::components::world::hex::HexData;
 use dagr_lib::kits::hexkit::terrain::Terrain;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Tile{
   pub symbol: char,
   pub color: Color,

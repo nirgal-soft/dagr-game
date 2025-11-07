@@ -66,7 +66,15 @@ impl Panel{
       };
 
       queue!(stdout, cursor::MoveTo(content_x, content_y))?;
-      write!(stdout, "{}", display_line)?;
+      write!(stdout, "{:<width$}", display_line, width = content_area_width)?;
+    }
+
+    for i in self.content.len()..content_area_height{
+      let content_y = self.y + 1 + i as u16;
+      let content_x = self.x + 1;
+
+      queue!(stdout, cursor::MoveTo(content_x, content_y))?;
+      write!(stdout, "{}", " ".repeat(content_area_width))?;
     }
 
     Ok(())
