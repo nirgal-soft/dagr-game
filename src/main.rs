@@ -23,15 +23,29 @@ use dagr_lib::bootstrap::{build_factor_registry, AppConfig};
 use hecs::World;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-  let _guard = init_tracing()?;
+async fn main(){
+  let _guard = match init_tracing(){
+    Ok(guard) => guard,
+    Err(e) => {
+      eprintln!("Failed to initialize tracing: {:#}", e);
+      std::process::exit(1);
+    }
+  };
+ 
+  if let Err(e) = run().await{
+    error!("Fatal error: {:#}", e);
+    eprintln!("Fatal error: {:#}", e);
+    std::process::exit(1);
+  }
+}
 
+async fn run() -> Result<()>{
   let pool = Arc::new(connection::establish_connection().await?);
   let world = Arc::new(Mutex::new(World::new()));
   let registry = Arc::new(build_factor_registry(AppConfig{
     pool: pool.clone(),
     world_seed: 0
-    })?
+  })?
   );
 
   let entity_manager = ems::entity_manager::EntityManager::new(

@@ -93,18 +93,18 @@ impl Renderer{
     stats_panel.set_content(stats);
     stats_panel.draw(stdout)?;
 
-    let hex_data = game_state.get_current_hex()?.get();
-    let hex = Tile::from_terrain_type(&hex_data);
-    let mut hex_panel = Panel::new(42, self.map_height, 30, 8);
-    hex_panel.set_title("Hex".to_string());
-    let hex_content = vec![
-      format!("{}", hex.symbol),
-      format!("terrain: {}", hex_data.get_terrain()),
-      format!("vegetation: {}", hex_data.get_vegetation()),
-      format!("water: {}", hex_data.get_water()),
-    ];
-    hex_panel.set_content(hex_content);
-    hex_panel.draw(stdout)?;
+    // let hex_data = game_state.get_current_hex()?.get();
+    // let hex = Tile::from_terrain_type(&hex_data);
+    // let mut hex_panel = Panel::new(42, self.map_height, 30, 8);
+    // hex_panel.set_title("Hex".to_string());
+    // let hex_content = vec![
+    //   format!("{}", hex.symbol),
+    //   format!("terrain: {}", hex_data.get_terrain()),
+    //   format!("vegetation: {}", hex_data.get_vegetation()),
+    //   format!("water: {}", hex_data.get_water()),
+    // ];
+    // hex_panel.set_content(hex_content);
+    // hex_panel.draw(stdout)?;
     Ok(())
   }
 }

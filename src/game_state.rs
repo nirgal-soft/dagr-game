@@ -113,7 +113,8 @@ impl GameState{
     info!("wilderness component: {:?}", wilderness);
 
     if !self.wilderness_cache.contains_key(&wilderness_entity){
-      let seed = hex_location.get().get_seed().context("no seed found for hex location")?;
+      info!("wilderness not cached, generating");
+      let seed = hex_location.get().get_seed().unwrap_or(0);
       let spatial_data = spatial.get();
       let generator = WildernessGenerator::new(seed as u64);
       let area = generator.generate(spatial_data.get_width(), spatial_data.get_length())?;
@@ -200,7 +201,7 @@ impl GameState{
     let hex_entity = self.entity_manager.find_entity_at::<Hex>(self.player_x, self.player_y);
     match hex_entity{
       Some(entity) => self.entity_manager.get_component::<Hex, _>(entity),
-      None => Err(anyhow!("No hex found at player position")),
+      None => Err(anyhow!("unable to find current hex at player location")),
     }
   }
 
