@@ -2,6 +2,10 @@ use std::io::{Write, self};
 use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use crossterm::{execute, cursor, terminal};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::{debug, error, info};
 mod camera;
 mod game_state;
 mod input;
@@ -20,6 +24,8 @@ use hecs::World;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+  let _guard = init_tracing()?;
+
   let pool = Arc::new(connection::establish_connection().await?);
   let world = Arc::new(Mutex::new(World::new()));
   let registry = Arc::new(build_factor_registry(AppConfig{
@@ -37,7 +43,6 @@ async fn main() -> Result<()> {
   // let mut rg = region_gen::RegionGenerator::new(entity_manager.clone());
   // rg.generate().await?;
   let _hexes = ems::load::load(&pool, entity_manager.world.clone()).await?;
-
 
   let mut stdout = io::stdout();
   terminal::enable_raw_mode()?;
@@ -67,6 +72,13 @@ async fn main() -> Result<()> {
       Action::Move(dx, dy) => {
         game_state.move_player(dx, dy).await?;
       },
+      Action::EnterWilderness => {
+        info!("entering wilderness");
+        game_state.enter_wilderness().await?;
+      },
+      Action::ExitWilderness => {
+        game_state.exit_wilderness()?;
+      },
       _ => {},
     }
   }
@@ -75,4 +87,32 @@ async fn main() -> Result<()> {
   stdout.flush()?;
 
   Ok(())
+}
+
+fn init_tracing() -> Result<WorkerGuard> {
+  let file_appender = RollingFileAppender::new(
+    Rotation::DAILY,
+    "logs",
+    "dagr_game"
+  );
+
+  let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+  tracing_subscriber::registry()
+    .with(
+      tracing_subscriber::fmt::layer()
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .with_target(true)
+        .with_line_number(true)
+    )
+    .with(tracing_subscriber::EnvFilter::from_default_env()
+      .add_directive("dagr_game=debug".parse().unwrap())
+      .add_directive("trace".parse().unwrap())
+    )
+    .init();
+
+  info!("logging initialized");
+
+  Ok(guard)
 }

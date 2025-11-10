@@ -5,6 +5,8 @@ pub enum Action{
   Move(i32, i32),
   Quit,
   Wait,
+  EnterWilderness,
+  ExitWilderness,
   None,
 }
 
@@ -47,6 +49,8 @@ impl InputManager{
       KeyCode::Char('u') => Action::Move(1, -1),
       KeyCode::Char('b') => Action::Move(-1, 1),
       KeyCode::Char('n') => Action::Move(1, 1),
+      KeyCode::Char('>') => Action::EnterWilderness,
+      KeyCode::Char('<') => Action::ExitWilderness,
 
       KeyCode::Char('q') => Action::Quit,
 

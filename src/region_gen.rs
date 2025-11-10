@@ -1,8 +1,8 @@
 use anyhow::Result;
 use serde_json::json;
-use dagr_lib::ems::entity_manager::EntityManager;
 use dagr_lib::components::world::hex::Hex;
 use dagr_lib::core::registry::EntityKind;
+use dagr_lib::ems::{component::Component, entity_manager::EntityManager};
 
 pub struct RegionGenerator{
   pub entity_manager: EntityManager,
@@ -25,7 +25,7 @@ impl RegionGenerator{
           json!({
             "x": dx,
             "y": dy,
-            "prev": prev
+            "prev": prev.get()
           })).await?;
         prev = self.entity_manager.get_component::<Hex, _>(entity)?;
       }
