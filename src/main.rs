@@ -93,6 +93,9 @@ async fn run() -> Result<()>{
       Action::ExitWilderness => {
         game_state.exit_wilderness()?;
       },
+      Action::GenerateDungeon => {
+        game_state.generate_dungeon().await?;
+      },
       _ => {},
     }
   }

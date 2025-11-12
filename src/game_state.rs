@@ -197,6 +197,23 @@ impl GameState{
     Ok(())
   }
 
+  pub async fn generate_dungeon(&mut self) -> Result<()>{
+    info!("generating dungeon");
+    let dungeon = self.entity_manager.create_entity(
+      EntityKind::Dungeon,
+      json!({
+        "seed": 0,
+        "depth_levels": 1,
+        "x": 0,
+        "y": 0,
+      })
+    ).await?;
+
+    info!("dungeon {:?} generated", dungeon);
+
+    Ok(())
+  }
+
   pub fn get_current_hex(&self) -> Result<Hex>{
     let hex_entity = self.entity_manager.find_entity_at::<Hex>(self.player_x, self.player_y);
     match hex_entity{

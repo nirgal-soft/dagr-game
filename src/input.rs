@@ -8,6 +8,7 @@ pub enum Action{
   EnterWilderness,
   ExitWilderness,
   None,
+  GenerateDungeon,
 }
 
 #[derive(Default, Debug)]
@@ -55,6 +56,8 @@ impl InputManager{
       KeyCode::Char('q') => Action::Quit,
 
       KeyCode::Char('.') => Action::Wait,
+
+      KeyCode::Char('D') => Action::GenerateDungeon,
 
       _ => Action::None,
     }
