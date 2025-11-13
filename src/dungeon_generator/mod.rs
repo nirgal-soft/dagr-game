@@ -24,6 +24,10 @@ use rand::{
 use tracing::info;
 use crate::tile::Tile;
 
+//temp
+use dagr_lib::kits::util_kit::bsp::BSPNode;
+use dagr_lib::kits::util_kit::rect::Rect as DRect;
+
 pub struct DungeonGenerator{
   pub seed: u64,
 }
@@ -170,4 +174,63 @@ impl DungeonGenerator{
 
     Ok(area)
   }
+
+  // pub fn generate_raw(
+  //   &self,
+  //   width: i32,
+  //   height: i32,
+  //   min_room_size: i32,
+  //   max_depth: i32
+  // ) -> Result<DungeonArea>{
+  //   let mut rng = StdRng::seed_from_u64(self.seed);
+
+  //   let mut root = BSPNode::new(DRect{
+  //     x: 0,
+  //     y: 0,
+  //     w: width,
+  //     h: height,
+  //   });
+  //   root.split(&mut rng, min_room_size, max_depth, 0);
+  //   root.create_rooms(&mut rng)?;
+
+  //   let leaf_rooms = root.get_leaf_rooms();
+  //   let mut passages = Vec::new();
+  //   root.create_passages(&mut passages);
+
+  //   let mut area = DungeonArea::new(width, height);
+
+  //   for leaf_rect in &leaf_rooms{
+  //     if let Some(room) = root.get_room(){
+  //       for y in room.y..(room.y + room.h){
+  //         for x in room.x..(room.x + room.w){
+  //           if x == room.x || x == room.x + room.w - 1 ||
+  //             y == room.y || y == room.y + room.h - 1{
+  //             area.set_tile(x, y, Tile{
+  //               symbol: '#',
+  //               color: Color::White,
+  //             });
+  //           }else{
+  //             area.set_tile(x, y, Tile{
+  //               symbol: '.',
+  //               color: Color::White,
+  //             });
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+
+  //   for passage in &passages{
+  //     for y in passage.y..(passage.y + passage.h){
+  //       for x in passage.x..(passage.x + passage.w){
+  //         area.set_tile(x, y, Tile{
+  //           symbol: '.',
+  //           color: Color::White,
+  //         });
+  //       }
+  //     }
+  //   }
+
+  //   Ok(area)
+  // }
 }

@@ -6,6 +6,15 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tracing::{debug, error, info};
+
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+  fn drop(&mut self) {
+    let _ = execute!(io::stdout(), terminal::LeaveAlternateScreen, cursor::Show);
+    let _ = terminal::disable_raw_mode();
+  }
+}
 mod camera;
 mod dungeon_generator;
 mod game_state;
@@ -62,6 +71,7 @@ async fn run() -> Result<()>{
   let mut stdout = io::stdout();
   terminal::enable_raw_mode()?;
   execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide)?;
+  let _terminal_guard = TerminalGuard;
 
   let (w, h) = terminal::size()?;
   let map_height = h / 2;
@@ -102,9 +112,6 @@ async fn run() -> Result<()>{
       _ => {},
     }
   }
-  execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show)?;
-  terminal::disable_raw_mode()?;
-  stdout.flush()?;
 
   Ok(())
 }
