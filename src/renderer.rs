@@ -26,8 +26,10 @@ impl Renderer{
         self.render_hexmap(stdout, &map, game_state)?;
       }
       ViewMode::Wilderness(wilderness_entity) => {
-        debug!("rendering wilderness");
         self.render_wilderness(stdout, &map, game_state)?;
+      }
+      ViewMode::Dungeon(dungeon_entity) => {
+        self.render_dungeon(stdout, &map, game_state)?;
       }
     }
 
@@ -72,6 +74,21 @@ impl Renderer{
 
       game_state.get_wilderness_tile(world_x, world_y)
     })?;
+    Ok(())
+  }
+
+  fn render_dungeon(&self, stdout: &mut std::io::Stdout, map: &Map, game_state: &GameState) -> Result<()>{
+    map.draw(stdout, |x, y|{
+      let world_x = x as i32 + game_state.camera.x;
+      let world_y = y as i32 + game_state.camera.y;
+
+      if world_x == game_state.player_x && world_y == game_state.player_y{
+        return Some(('@', Color::Blue));
+      }
+
+      game_state.get_dungeon_tile(world_x, world_y)
+    })?;
+
     Ok(())
   }
 

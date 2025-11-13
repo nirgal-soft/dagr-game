@@ -7,6 +7,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tracing::{debug, error, info};
 mod camera;
+mod dungeon_generator;
 mod game_state;
 mod input;
 mod region_gen;
@@ -90,8 +91,10 @@ async fn run() -> Result<()>{
         info!("entering wilderness");
         game_state.enter_wilderness().await?;
       },
-      Action::ExitWilderness => {
-        game_state.exit_wilderness()?;
+      Action::ExitDungeon => {
+        if game_state.exit_wilderness().is_err(){
+          game_state.exit_dungeon()?;
+        }
       },
       Action::GenerateDungeon => {
         game_state.generate_dungeon().await?;

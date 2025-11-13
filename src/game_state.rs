@@ -13,6 +13,7 @@ use dagr_lib::components::world::{
 use dagr_lib::core::registry::EntityKind;
 use dagr_lib::ems::{entity_manager::EntityManager, component::Component};
 use crate::camera::Camera;
+use crate::dungeon_generator::{DungeonArea, DungeonGenerator};
 use crate::tile::Tile;
 use crate::wilderness_generator::{WildernessArea, WildernessGenerator, wilderness_tile::WildernessTile};
 use crate::world_map::WorldMap;
@@ -21,6 +22,7 @@ use crate::world_map::WorldMap;
 pub enum ViewMode{
   HexMap,
   Wilderness(Entity),
+  Dungeon(Entity),
 }
 
 pub struct GameState{
@@ -31,6 +33,7 @@ pub struct GameState{
   pub player_y: i32,
   pub view_mode: ViewMode,
   wilderness_cache: HashMap<Entity, WildernessArea>,
+  dungeon_cache: HashMap<Entity, DungeonArea>,
 }
 
 impl GameState{
@@ -43,6 +46,7 @@ impl GameState{
       player_y: 0,
       view_mode: ViewMode::HexMap,
       wilderness_cache: HashMap::new(),
+      dungeon_cache: HashMap::new(),
     };
     state.rebuild_map();
     state.attach_tiles();
@@ -65,6 +69,13 @@ impl GameState{
       ViewMode::Wilderness(wilderness_entity) => {
         if let Some(wilderness) = self.wilderness_cache.get(&wilderness_entity){
           if !wilderness.contains(new_x, new_y){
+            can_move = false;
+          }
+        }
+      }
+      ViewMode::Dungeon(dungeon_entity) => {
+        if let Some(dungeon) = self.dungeon_cache.get(&dungeon_entity){
+          if !dungeon.contains(new_x, new_y){
             can_move = false;
           }
         }
@@ -150,7 +161,7 @@ impl GameState{
         self.camera.center_on(self.player_x, self.player_y);
         Ok(())
       }
-      ViewMode::HexMap => {
+      _ => {
         Err(anyhow!("not currently in wilderness mode"))
       }
     }
@@ -161,6 +172,17 @@ impl GameState{
       if let Some(wilderness) = self.wilderness_cache.get(&wilderness_entity){
         if let Some(wtile) = wilderness.get(x, y){
           return Some((wtile.tile.symbol, wtile.tile.color))
+        }
+      }
+    }
+    None
+  }
+
+  pub fn get_dungeon_tile(&self, x: i32, y: i32) -> Option<(char, Color)>{
+    if let ViewMode::Dungeon(dungeon_entity) = self.view_mode{
+      if let Some(dungeon) = self.dungeon_cache.get(&dungeon_entity){
+        if let Some(tile) = dungeon.get_tile(x, y){
+          return Some((tile.symbol, tile.color))
         }
       }
     }
@@ -211,6 +233,8 @@ impl GameState{
 
     info!("dungeon {:?} generated", dungeon);
 
+    self.enter_dungeon(dungeon).await?;
+
     Ok(())
   }
 
@@ -238,6 +262,55 @@ impl GameState{
     let mut world = self.entity_manager.world.lock().unwrap();
     for (entity, tile) in tiles{
       world.insert_one(entity, tile).ok();
+    }
+  }
+
+  pub async fn enter_dungeon(&mut self, dungeon_entity: Entity) -> Result<()>{
+    info!("entering dungeon");
+    let dungeon_generator = DungeonGenerator::new(0);
+
+    if !self.dungeon_cache.contains_key(&dungeon_entity){
+      info!("dungeon not cached, building area");
+      let dungeon_area = dungeon_generator.generate(dungeon_entity, &self.entity_manager)?;
+      self.dungeon_cache.insert(dungeon_entity, dungeon_area);
+    }
+
+    self.view_mode = ViewMode::Dungeon(dungeon_entity);
+
+    let dungeon = self.dungeon_cache.get(&dungeon_entity)
+      .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
+
+    self.player_x = dungeon.width / 2;
+    self.player_y = dungeon.height / 2;
+    self.camera.center_on(self.player_x, self.player_y);
+
+    Ok(())
+  }
+
+  pub fn exit_dungeon(&mut self) -> Result<()>{
+    match self.view_mode{
+      ViewMode::Dungeon(dungeon_entity) => {
+        let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
+        let parent_location_id = dungeon_location.get().parent_location_id;
+
+        if let Some(parent_id) = parent_location_id{
+          let hex_entity = self.entity_manager.find_entity_by_location_id::<Hex>(parent_id)
+            .ok_or_else(|| anyhow!("no hex found at parent location"))?;
+          let hex_spatial = self.entity_manager.get_component::<Spatial, _>(hex_entity)?;
+          let hex_spatial_data = hex_spatial.get();
+
+          self.player_x = hex_spatial_data.get_x();
+          self.player_y = hex_spatial_data.get_y();
+        }else{
+          self.player_x = 0;
+          self.player_y = 0;
+        }
+
+        self.view_mode = ViewMode::HexMap;
+        self.camera.center_on(self.player_x, self.player_y);
+        Ok(())
+      }
+      _ => Err(anyhow!("not currently in dungeon mode")),
     }
   }
 }
