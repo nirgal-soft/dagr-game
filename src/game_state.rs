@@ -271,7 +271,9 @@ impl GameState{
 
     if !self.dungeon_cache.contains_key(&dungeon_entity){
       info!("dungeon not cached, building area");
-      let dungeon_area = dungeon_generator.generate(dungeon_entity, &self.entity_manager)?;
+      // let dungeon_area = dungeon_generator.generate(dungeon_entity, &self.entity_manager)?;
+      let dungeon_area = dungeon_generator.generate_raw(45, 45, 5, 4)?;
+      debug!("dungeon area: {:?}", dungeon_area);
       self.dungeon_cache.insert(dungeon_entity, dungeon_area);
     }
 

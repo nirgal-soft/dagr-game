@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use crate::tile::Tile;
 
+#[derive(Debug)]
 pub struct DungeonArea{
   pub width: i32,
   pub height: i32,
