@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 use crate::tile::Tile;
 
+pub enum DungeonTileType{
+  Floor,
+  Wall,
+}
+
 #[derive(Debug)]
 pub struct DungeonArea{
   pub width: i32,
@@ -17,7 +22,11 @@ impl DungeonArea{
     }
   }
 
-  pub fn set_tile(&mut self, x: i32, y: i32, tile: Tile){
+  pub fn set_tile(&mut self, x: i32, y: i32, tile_type: DungeonTileType){
+    let tile = match tile_type{
+      DungeonTileType::Floor => Tile{symbol: '.', color: crossterm::style::Color::Grey},
+      DungeonTileType::Wall => Tile{symbol: '#', color: crossterm::style::Color::White},
+    };
     self.tiles.insert((x, y), tile);
   }
 
@@ -27,5 +36,13 @@ impl DungeonArea{
 
   pub fn contains(&self, x: i32, y: i32) -> bool{
     x >= 0 && x < self.width && y >= 0 && y < self.height
+  }
+
+  pub fn is_walkable(&self, x: i32, y: i32) -> bool{
+    if let Some(tile) = self.tiles.get(&(x, y)){
+      tile.symbol == '.'
+    }else{
+      false
+    }
   }
 }

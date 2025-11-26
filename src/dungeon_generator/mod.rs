@@ -1,5 +1,5 @@
 pub mod dungeon_area;
-pub use dungeon_area::DungeonArea;
+pub use dungeon_area::{DungeonArea, DungeonTileType};
 
 use std::collections::HashMap;
 use anyhow::{anyhow, Result};
@@ -114,33 +114,18 @@ impl DungeonGenerator{
 
       for y in ry..(ry + rh){
         for x in rx..(rx + rw){
-          area.set_tile(x, ry, Tile{
-            symbol: '#',
-            color: Color::White,
-          });
-          area.set_tile(x, ry + rh - 1, Tile{
-            symbol: '#',
-            color: Color::White,
-          });
+          area.set_tile(x, ry, DungeonTileType::Wall);
+          area.set_tile(x, ry + rh - 1, DungeonTileType::Wall);
         }
 
         for y in ry..(ry+rh){
-          area.set_tile(rx, y, Tile{
-            symbol: '#',
-            color: Color::White,
-          });
-          area.set_tile(rx + rw - 1, y, Tile{
-            symbol: '#',
-            color: Color::White,
-          });
+          area.set_tile(rx, y, DungeonTileType::Wall);
+          area.set_tile(rx + rw - 1, y, DungeonTileType::Wall);
         }
 
         for y in (ry + 1)..(ry + rh - 1){
           for x in (rx + 1)..(rx + rw - 1){
-            area.set_tile(x, y, Tile{
-              symbol: '.',
-              color: Color::White,
-            });
+            area.set_tile(x, y, DungeonTileType::Floor);
           }
         }
       }
@@ -163,10 +148,7 @@ impl DungeonGenerator{
 
         for y in py..(py + ph){
           for x in px..(px + pw){
-            area.set_tile(x, y, Tile{
-              symbol: '.',
-              color: Color::White,
-            });
+            area.set_tile(x, y, DungeonTileType::Floor);
           }
         }
       }
@@ -193,44 +175,96 @@ impl DungeonGenerator{
     root.split(&mut rng, min_room_size, max_depth, 0);
     root.create_rooms(&mut rng)?;
 
-    let leaf_rooms = root.get_leaf_rooms();
     let mut passages = Vec::new();
     root.create_passages(&mut passages);
 
     let mut area = DungeonArea::new(width, height);
 
-    for leaf_rect in &leaf_rooms{
-      if let Some(room) = root.get_room(){
-        for y in room.y..(room.y + room.h){
-          for x in room.x..(room.x + room.w){
-            if x == room.x || x == room.x + room.w - 1 ||
-              y == room.y || y == room.y + room.h - 1{
-              area.set_tile(x, y, Tile{
-                symbol: '#',
-                color: Color::White,
-              });
-            }else{
-              area.set_tile(x, y, Tile{
-                symbol: '.',
-                color: Color::White,
-              });
-            }
-          }
-        }
-      }
-    }
+    let mut rooms = Vec::new();
+    collect_rooms(&root, &mut rooms);
 
-    for passage in &passages{
-      for y in passage.y..(passage.y + passage.h){
-        for x in passage.x..(passage.x + passage.w){
-          area.set_tile(x, y, Tile{
-            symbol: '.',
-            color: Color::White,
-          });
-        }
-      }
-    }
+    set_room_tiles(&mut area, &rooms);
+    set_passage_tiles(&mut area, &passages);
 
     Ok(area)
+  }
+}
+
+fn collect_rooms(node: &BSPNode, rooms: &mut Vec<DRect>){
+  if let Some(room) = &node.room{
+    rooms.push(room.clone());
+  }
+  if let Some(left) = &node.left{
+    collect_rooms(left, rooms);
+  }
+  if let Some(right) = &node.right{
+    collect_rooms(right, rooms);
+  }
+}
+
+fn set_room_tiles(area: &mut DungeonArea, rooms: &Vec<DRect>){
+  for room in rooms{
+    for y in room.y..(room.y+room.h){
+      area.set_tile(room.x, y, DungeonTileType::Wall);
+      area.set_tile(room.x + room.w - 1, y, DungeonTileType::Wall);
+    }
+    for x in room.x..(room.x+room.w){
+      area.set_tile(x, room.y, DungeonTileType::Wall);
+      area.set_tile(x, room.y + room.h - 1, DungeonTileType::Wall);
+    }
+
+    for y in (room.y + 1)..(room.y + room.h - 1){
+      for x in (room.x+1)..(room.x+room.w-1){
+        area.set_tile(x, y, DungeonTileType::Floor);
+      }
+    }
+  }
+}
+
+fn set_passage_tiles(area: &mut DungeonArea, passages: &Vec<DRect>){
+  for passage in passages{
+    if passage.w == 1{
+      for y in passage.y..(passage.y+passage.h){
+        if passage.x > 0 && area.get_tile(passage.x - 1, y).is_none(){
+          area.set_tile(passage.x-1, y, DungeonTileType::Wall);
+        }
+        area.set_tile(passage.x, y, DungeonTileType::Floor);
+        if passage.x + 1 < area.width && area.get_tile(passage.x + 1, y).is_none(){
+          area.set_tile(passage.x+1, y, DungeonTileType::Wall);
+        }
+      }
+    }else if passage.h == 1{
+      for x in passage.x..(passage.x + passage.w){
+        if passage.y > 0 && area.get_tile(x, passage.y - 1).is_none(){
+          area.set_tile(x, passage.y - 1, DungeonTileType::Wall);
+        }
+        area.set_tile(x, passage.y, DungeonTileType::Floor);
+        if passage.y + 1 < area.height && area.get_tile(x, passage.y + 1).is_none(){
+          area.set_tile(x, passage.y + 1, DungeonTileType::Wall);
+        }
+      }
+    }else{
+      for y in passage.y..(passage.y + passage.h){
+        if area.get_tile(passage.x, y).is_none(){
+          area.set_tile(passage.x, y , DungeonTileType::Wall);
+        }
+        if area.get_tile(passage.x + passage.w - 1, y).is_none(){
+          area.set_tile(passage.x + passage.w - 1, y, DungeonTileType::Wall);
+        }
+      }
+      for x in passage.x..(passage.x + passage.w){
+        if area.get_tile(x, passage.y).is_none(){
+          area.set_tile(x, passage.y, DungeonTileType::Wall);
+        }
+        if area.get_tile(x, passage.y + passage.h - 1).is_none(){
+          area.set_tile(x, passage.y + passage.h - 1, DungeonTileType::Wall);
+        }
+      }
+      for y in (passage.y+1)..(passage.y+passage.h-1){
+        for x in (passage.x+1)..(passage.x+passage.w-1){
+          area.set_tile(x, y, DungeonTileType::Floor);
+        }
+      }
+    }
   }
 }

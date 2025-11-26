@@ -15,7 +15,7 @@ pub struct Renderer{
 
 impl Renderer{
   pub fn new(width: u16, height: u16) -> Self{
-    Self{width, height, map_height: height/2}
+    Self{width, height, map_height: height*80/100}
   }
 
   pub fn render(&self, stdout: &mut std::io::Stdout, game_state: &GameState) -> Result<()>{
