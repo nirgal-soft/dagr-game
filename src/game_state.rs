@@ -282,8 +282,10 @@ impl GameState{
     let dungeon = self.dungeon_cache.get(&dungeon_entity)
       .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
 
-    self.player_x = dungeon.width / 2;
-    self.player_y = dungeon.height / 2;
+    if let Some((entrance_x, entrance_y)) = dungeon.entrance{
+      self.player_x = entrance_x;
+      self.player_y = entrance_y;
+    }
     self.camera.center_on(self.player_x, self.player_y);
 
     Ok(())

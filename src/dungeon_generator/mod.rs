@@ -9,7 +9,7 @@ use dagr_lib::components::world::{
   dungeon_passage::DungeonPassage,
   dungeon_room::DungeonRoom,
   location::Location,
-  spatial::Spatial
+  spatial::{Spatial, SpatialData},
 };
 use dagr_lib::ems::{
   component::Component,
@@ -51,24 +51,30 @@ impl DungeonGenerator{
     let mut max_x = i32::MIN;
     let mut min_y = i32::MAX;
     let mut max_y = i32::MIN;
-    let mut rooms = Vec::new();
-    let mut entrance_x = 0;
-    let mut entrance_y = 0;
-    let mut entrance_found = false;
+
+    let mut room_spatials: HashMap<i32, SpatialData> = HashMap::new();
+    let mut rooms: Vec<SpatialData> = Vec::new();
+    let mut entrance_spatial: Option<SpatialData> = None;
 
     for entity in room_entities{
       let room = entity_manager.get_component::<DungeonRoom, _>(entity)?;
+      let location = entity_manager.get_component::<Location, _>(entity)?;
       let spatial = entity_manager.get_component::<Spatial, _>(entity)?;
 
       if room.get().get_dungeon_level() == target_level{
         let spatial_data = spatial.get();
         let room_data = room.get();
-        info!("found room at ({}, {})", spatial_data.get_x(), spatial_data.get_y());
+        let location_id = location.get().get_id();
+        info!("found room {} at ({}, {}) size {}x{}",
+          location_id,
+          spatial_data.get_x(),
+          spatial_data.get_y(),
+          spatial_data.get_width(),
+          spatial_data.get_length()
+        );
 
-        if room_data.get_is_entrance() && !entrance_found{
-          entrance_x = spatial_data.get_x() + spatial_data.get_width() / 2;
-          entrance_y = spatial_data.get_y() + spatial_data.get_length() / 2;
-          entrance_found = true;
+        if room_data.get_is_entrance(){
+          entrance_spatial = Some(spatial_data.clone());
         }
 
         min_x = min_x.min(spatial_data.get_x());
@@ -76,17 +82,13 @@ impl DungeonGenerator{
         max_x = max_x.max(spatial_data.get_x() + spatial_data.get_width());
         max_y = max_y.max(spatial_data.get_y() + spatial_data.get_length());
 
+        room_spatials.insert(location_id, spatial_data.clone());
         rooms.push(spatial_data);
       }
     }
 
     if rooms.is_empty(){
       return Err(anyhow!("no rooms found for dungeon level {}", target_level));
-    }
-
-    if !entrance_found{
-      entrance_x = rooms[0].get_x() + rooms[0].get_width() / 2;
-      entrance_y = rooms[0].get_y() + rooms[0].get_length() / 2;
     }
 
     let width = max_x - min_x;
@@ -97,36 +99,25 @@ impl DungeonGenerator{
 
     let mut area = DungeonArea::new(width, height);
 
-    // for y in 0..height{
-    //   for x in 0..width{
-    //     area.set_tile(x, y, Tile{
-    //       symbol: '#',
-    //       color: Color::DarkGrey,
-    //     })
-    //   }
-    // }
-
-    for spatial_data in rooms{
+    for spatial_data in &rooms{
       let rx = spatial_data.get_x() - min_x;
       let ry = spatial_data.get_y() - min_y;
       let rw = spatial_data.get_width();
       let rh = spatial_data.get_length();
 
+      for x in rx..(rx + rw){
+        area.set_tile(x, ry, DungeonTileType::Wall);
+        area.set_tile(x, ry + rh - 1, DungeonTileType::Wall);
+      }
+
       for y in ry..(ry + rh){
-        for x in rx..(rx + rw){
-          area.set_tile(x, ry, DungeonTileType::Wall);
-          area.set_tile(x, ry + rh - 1, DungeonTileType::Wall);
-        }
+        area.set_tile(rx, y, DungeonTileType::Wall);
+        area.set_tile(rx + rw - 1, y, DungeonTileType::Wall);
+      }
 
-        for y in ry..(ry+rh){
-          area.set_tile(rx, y, DungeonTileType::Wall);
-          area.set_tile(rx + rw - 1, y, DungeonTileType::Wall);
-        }
-
-        for y in (ry + 1)..(ry + rh - 1){
-          for x in (rx + 1)..(rx + rw - 1){
-            area.set_tile(x, y, DungeonTileType::Floor);
-          }
+      for y in (ry + 1)..(ry + rh - 1){
+        for x in (rx + 1)..(rx + rw -1){
+          area.set_tile(x, y, DungeonTileType::Floor);
         }
       }
     }
@@ -135,23 +126,56 @@ impl DungeonGenerator{
 
     for entity in passage_entities{
       let passage = entity_manager.get_component::<DungeonPassage, _>(entity)?;
-      let spatial = entity_manager.get_component::<Spatial, _>(entity)?;
+      let passage_data = passage.get();
 
-      if passage.get().get_dungeon_level() == target_level{
-        let spatial_data = spatial.get();
-        info!("found passage at ({}, {})", spatial_data.get_x(), spatial_data.get_y());
+      if passage_data.get_dungeon_level() == target_level{
+        let from_id = passage_data.get_connects_from();
+        let to_id = passage_data.get_connects_to();
 
-        let px = spatial_data.get_x() - min_x;
-        let py = spatial_data.get_y() - min_y;
-        let pw = spatial_data.get_width();
-        let ph = spatial_data.get_length();
+        if let (Some(from_room), Some(to_room)) = (room_spatials.get(&from_id), room_spatials.get(&to_id)){
+          let from_cx = (from_room.get_x() + from_room.get_width() / 2) - min_x;
+          let from_cy = (from_room.get_y() + from_room.get_length() / 2) - min_y;
+          let to_cx = (to_room.get_x() + to_room.get_width() / 2) - min_x;
+          let to_cy = (to_room.get_y() + to_room.get_length() / 2) - min_y;
 
-        for y in py..(py + ph){
-          for x in px..(px + pw){
-            area.set_tile(x, y, DungeonTileType::Floor);
+          info!("drawing L-corridor from room {} ({},{}) to room {} ({},{})",
+            from_id, from_cx, from_cy, to_id, to_cx, to_cy);
+
+          let hx_start = from_cx.min(to_cx);
+          let hx_end = from_cx.max(to_cx);
+          for x in hx_start..=hx_end{
+            if from_cy > 0 && !area.is_walkable(x, from_cy - 1){
+              area.set_tile(x, from_cy - 1, DungeonTileType::Wall);
+            }
+            area.set_tile(x, from_cy, DungeonTileType::Floor);
+            if from_cy + 1 < height && !area.is_walkable(x, from_cy +1){
+              area.set_tile(x, from_cy + 1, DungeonTileType::Wall);
+            }
           }
+
+          let vy_start = from_cy.min(to_cy);
+          let vy_end = from_cy.max(to_cy);
+          for y in vy_start..=vy_end{
+            if to_cx > 0 && !area.is_walkable(to_cx - 1, y){
+              area.set_tile(to_cx -1, y, DungeonTileType::Wall);
+            }
+            area.set_tile(to_cx, y, DungeonTileType::Floor);
+            if to_cx + 1 < width && !area.is_walkable(to_cx + 1, y){
+              area.set_tile(to_cx + 1, y, DungeonTileType::Wall);
+            }
+          }
+        }else{
+          info!("warning: passage connects rooms {} -> {} but one or both not found", from_id, to_id);
         }
       }
+    }
+
+    if let Some(entrance) = entrance_spatial{
+      let entrance_x = (entrance.get_x() + entrance.get_width() / 2) - min_x;
+      let entrance_y = (entrance.get_y() + entrance.get_length() / 2) - min_y;
+      area.set_entrance(entrance_x, entrance_y);
+      area.set_tile(entrance_x, entrance_y, DungeonTileType::StairsUp);
+      info!("dungeon entrance at {},{}", entrance_x, entrance_y);
     }
 
     Ok(area)

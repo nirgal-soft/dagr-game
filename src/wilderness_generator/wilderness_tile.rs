@@ -8,6 +8,7 @@ pub enum WildernessTileType{
   Water,
   Rock,
   Dirt,
+  StairsDown,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -24,6 +25,7 @@ impl WildernessTile{
       WildernessTileType::Water => ('~', Color::Blue),
       WildernessTileType::Rock => ('o', Color::Grey),
       WildernessTileType::Dirt => (',', Color::Yellow),
+      WildernessTileType::StairsDown => ('>', Color::Yellow),
     };
     let tile = Tile::new(symbol, color);
 
