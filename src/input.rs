@@ -5,11 +5,10 @@ pub enum Action{
   Move(i32, i32),
   Quit,
   Wait,
-  EnterWilderness,
-  ExitWilderness,
+  Ascend,
+  Descend,
   None,
   GenerateDungeon,
-  ExitDungeon,
 }
 
 #[derive(Default, Debug)]
@@ -51,8 +50,8 @@ impl InputManager{
       KeyCode::Char('u') => Action::Move(1, -1),
       KeyCode::Char('b') => Action::Move(-1, 1),
       KeyCode::Char('n') => Action::Move(1, 1),
-      KeyCode::Char('>') => Action::EnterWilderness,
-      KeyCode::Char('<') => Action::ExitDungeon,
+      KeyCode::Char('<') => Action::Ascend,
+      KeyCode::Char('>') => Action::Descend,
 
       KeyCode::Char('q') => Action::Quit,
 

@@ -40,6 +40,7 @@ impl WildernessGenerator{
       width,
       height,
       tiles,
+      dungeon_entrance: None,
     })
   }
 

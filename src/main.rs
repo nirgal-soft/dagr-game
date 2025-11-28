@@ -97,14 +97,11 @@ async fn run() -> Result<()>{
       Action::Move(dx, dy) => {
         game_state.move_player(dx, dy).await?;
       },
-      Action::EnterWilderness => {
-        info!("entering wilderness");
-        game_state.enter_wilderness().await?;
+      Action::Ascend => {
+        game_state.ascend().await?;
       },
-      Action::ExitDungeon => {
-        if game_state.exit_wilderness().is_err(){
-          game_state.exit_dungeon()?;
-        }
+      Action::Descend => {
+        game_state.descend().await?;
       },
       Action::GenerateDungeon => {
         game_state.generate_dungeon().await?;

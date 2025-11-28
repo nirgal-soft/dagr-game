@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use anyhow::{anyhow, Context, Result};
 use crossterm::style::Color;
 use hecs::Entity;
 use serde_json::json;
 use tracing::{debug, error, info};
 use dagr_lib::components::world::{
+  dungeon::Dungeon,
   hex::{Hex, HexData},
   location::Location,
   spatial::Spatial,
@@ -98,6 +100,7 @@ impl GameState{
     let hex_location = self.entity_manager.get_component::<Location, _>(hex_entity)?;
     let hex_spatial = self.entity_manager.get_component::<Spatial, _>(hex_entity)?;
     let hex_location_id = hex_location.get().get_id();
+    let hex_seed = hex_location.get().get_seed().unwrap_or(0);
     info!("hex location id: {}", hex_location_id);
 
     let wilderness_entity = match self.entity_manager.find_child_entity::<Wilderness>(hex_location_id){
@@ -118,18 +121,44 @@ impl GameState{
       }
     };
 
+    let _dungeon_entity = match self.entity_manager.find_child_entity::<Dungeon>(hex_location_id){
+      Some(entity) => {
+        info!("found dungeon entity");
+        entity
+      }
+      None => {
+        info!("no dungeon entity found");
+        self.entity_manager.create_entity(
+          EntityKind::Dungeon,
+          json!({
+            "seed": hex_seed,
+            "depth_levels": 1,
+            "x": hex_spatial.get().get_x(),
+            "y": hex_spatial.get().get_y(),
+            "parent_location_id": Some(hex_location_id)
+          })
+        ).await?
+      }
+    };
+
     let spatial = self.entity_manager.get_component::<Spatial, _>(wilderness_entity)?;
     let wilderness = self.entity_manager.get_component::<Wilderness, _>(wilderness_entity)?;
     info!("wilderness entity: {:?}", wilderness_entity);
     info!("wilderness component: {:?}", wilderness);
 
-    if !self.wilderness_cache.contains_key(&wilderness_entity){
+    if let Entry::Vacant(e) = self.wilderness_cache.entry(wilderness_entity) {
       info!("wilderness not cached, generating");
       let seed = hex_location.get().get_seed().unwrap_or(0);
       let spatial_data = spatial.get();
       let generator = WildernessGenerator::new(seed as u64);
-      let area = generator.generate(spatial_data.get_width(), spatial_data.get_length())?;
-      self.wilderness_cache.insert(wilderness_entity, area);
+      let mut area = generator.generate(spatial_data.get_width(), spatial_data.get_length())?;
+
+      let entrance_x = area.width / 2;
+      let entrance_y = area.height / 2;
+      area.set_dungeon_entrance(entrance_x, entrance_y);
+      info!("dungeon entrance at {},{}", entrance_x, entrance_y);
+
+      e.insert(area);
     }
 
     self.view_mode = ViewMode::Wilderness(wilderness_entity);
@@ -265,16 +294,87 @@ impl GameState{
     }
   }
 
+  pub async fn ascend(&mut self) -> Result<()>{
+    match self.view_mode{
+      ViewMode::HexMap => {
+        info!("already at top level");
+      },
+      ViewMode::Wilderness(_wilderness_entity) => {
+        self.exit_wilderness()?;
+      },
+      ViewMode::Dungeon(dungeon_entity) => {
+        let dungeon = self.dungeon_cache.get(&dungeon_entity)
+          .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
+
+        if !dungeon.is_stairs_up(self.player_x, self.player_y){
+          info!("not standing on dungeon exit");
+          return Ok(());
+        }
+
+        let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
+        let parent_hex_id = dungeon_location.get().get_parent_location_id();
+
+        if let Some(hex_id) = parent_hex_id{
+          if let Some(wilderness_entity) = self.entity_manager.find_child_entity::<Wilderness>(hex_id){
+            if let Some(wilderness) = self.wilderness_cache.get(&wilderness_entity){
+              if let Some((entrance_x, entrance_y)) = wilderness.dungeon_entrance{
+                self.player_x = entrance_x;
+                self.player_y = entrance_y;
+              }
+            }
+            self.view_mode = ViewMode::Wilderness(wilderness_entity);
+            self.camera.center_on(self.player_x, self.player_y);
+            return Ok(());
+          }
+        }
+
+        self.exit_dungeon()?;
+      },
+    }
+
+    Ok(())
+  }
+
+  pub async fn descend(&mut self) -> Result<()>{
+    match self.view_mode{
+      ViewMode::HexMap => {
+        self.enter_wilderness().await?;
+      },
+      ViewMode::Wilderness(wilderness_entity) => {
+        let wilderness = self.wilderness_cache.get(&wilderness_entity)
+          .ok_or_else(|| anyhow!("no wilderness found at hex location"))?;
+
+        if !wilderness.is_dungeon_entrance(self.player_x, self.player_y){
+          info!("not standing on dungeon entrance");
+          return Ok(());
+        }
+
+        let wilderness_location = self.entity_manager.get_component::<Location, _>(wilderness_entity)?;
+        let parent_hex_id = wilderness_location.get().get_parent_location_id()
+          .ok_or_else(|| anyhow!("no parent location found for wilderness"))?;
+
+        if let Some(dungeon_entity) = self.entity_manager.find_child_entity::<Dungeon>(parent_hex_id){
+          self.enter_dungeon(dungeon_entity).await?;
+        }else{
+          info!("no dungeon found at parent hex location");
+        }
+      },
+      ViewMode::Dungeon(_dungeon_entity) => {
+        info!("already in dungeon, stairs down not implemented yet");
+      },
+    }
+    Ok(())
+  }
+
   pub async fn enter_dungeon(&mut self, dungeon_entity: Entity) -> Result<()>{
     info!("entering dungeon");
     let dungeon_generator = DungeonGenerator::new(0);
 
-    if !self.dungeon_cache.contains_key(&dungeon_entity){
+    if let std::collections::hash_map::Entry::Vacant(e) = self.dungeon_cache.entry(dungeon_entity) {
       info!("dungeon not cached, building area");
       let dungeon_area = dungeon_generator.generate(dungeon_entity, &self.entity_manager)?;
-      // let dungeon_area = dungeon_generator.generate_raw(80, 40, 6, 4)?;
       debug!("dungeon area: {:?}", dungeon_area);
-      self.dungeon_cache.insert(dungeon_entity, dungeon_area);
+      e.insert(dungeon_area);
     }
 
     self.view_mode = ViewMode::Dungeon(dungeon_entity);
