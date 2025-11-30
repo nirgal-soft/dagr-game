@@ -181,6 +181,7 @@ impl DungeonGenerator{
     }
 
     let connection_entities = entity_manager.find_all_children::<DungeonConnection>(dungeon_location_id);
+    info!("founc {} connection entities", connection_entities.len());
     
     for entity in connection_entities{
       let connection = entity_manager.get_component::<DungeonConnection, _>(entity)?;
@@ -190,20 +191,28 @@ impl DungeonGenerator{
         let from_id = cx_data.get_from_location_id();
         let to_id = cx_data.get_to_location_id();
 
+        info!("StairsDown connection: from_location_id={}, to_location_id={}", from_id, to_id);
+
         if let Some(from_room) = room_spatials.get(&from_id){
           let stair_x = (from_room.get_x() + from_room.get_width() / 2) - min_x;
-          let stair_y = (from_room.get_y() - from_room.get_length() /2 ) - min_y;
+          let stair_y = (from_room.get_y() + from_room.get_length() /2 ) - min_y;
+          info!("placing > at ({}, {}) from room {} on level {}", stair_x, stair_y, from_id, target_level);
           area.set_tile(stair_x, stair_y, DungeonTileType::StairsDown);
           area.set_stairs_down(stair_x, stair_y);
           info!("dungeon stairs down at {},{}", stair_x, stair_y);
+        }else{
+          info!("from_room {} NOT found in room_spatials for level {}", from_id, target_level);
         }
 
         if let Some(to_room) = room_spatials.get(&to_id){
           let stair_x = (to_room.get_x() + to_room.get_width() / 2) - min_x;
           let stair_y = (to_room.get_y() + to_room.get_length() / 2) - min_y;
+          info!("placing < at ({}, {}) from room {} on level {}", stair_x, stair_y, to_id, target_level);
           area.set_tile(stair_x, stair_y, DungeonTileType::StairsUp);
           area.set_stairs_up(stair_x, stair_y);
           info!("dungeon stairs up at {},{}", stair_x, stair_y);
+        }else{
+          info!("to_room {} NOT found in room_spatials for level {}", to_id, target_level);
         }
       }
     }
