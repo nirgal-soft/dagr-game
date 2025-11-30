@@ -13,6 +13,10 @@ pub struct DungeonArea{
   pub width: i32,
   pub height: i32,
   pub entrance: Option<(i32, i32)>,
+  pub current_level: i32,
+  pub max_level: i32,
+  pub stairs_up: Option<(i32, i32)>,
+  pub stairs_down: Option<(i32, i32)>,
   tiles: HashMap<(i32, i32), Tile>,
 }
 
@@ -22,12 +26,40 @@ impl DungeonArea{
       width,
       height,
       entrance: None,
+      current_level: 1,
+      max_level: 1,
+      stairs_up: None,
+      stairs_down: None,
       tiles: HashMap::new(),
     }
   }
 
   pub fn set_entrance(&mut self, x: i32, y: i32){
     self.entrance = Some((x, y));
+  }
+
+  pub fn set_current_level(&mut self, level: i32){
+    self.current_level = level;
+  }
+
+  pub fn set_max_level(&mut self, level: i32){
+    self.max_level = level;
+  }
+
+  pub fn set_stairs_up(&mut self, x: i32, y: i32){
+    self.stairs_up = Some((x, y));
+  }
+
+  pub fn set_stairs_down(&mut self, x: i32, y: i32){
+    self.stairs_down = Some((x, y));
+  }
+
+  pub fn can_descend(&self) -> bool{
+    self.current_level < self.max_level && self.stairs_down.is_some()
+  }
+
+  pub fn can_ascend(&self) -> bool{
+    self.stairs_up.is_some()
   }
 
   pub fn set_tile(&mut self, x: i32, y: i32, tile_type: DungeonTileType){

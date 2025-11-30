@@ -132,7 +132,7 @@ impl GameState{
           EntityKind::Dungeon,
           json!({
             "seed": hex_seed,
-            "depth_levels": 1,
+            "depth_levels": 3,
             "x": hex_spatial.get().get_x(),
             "y": hex_spatial.get().get_y(),
             "parent_location_id": Some(hex_location_id)
@@ -303,32 +303,51 @@ impl GameState{
         self.exit_wilderness()?;
       },
       ViewMode::Dungeon(dungeon_entity) => {
-        let dungeon = self.dungeon_cache.get(&dungeon_entity)
+        let dungeon_area = self.dungeon_cache.get(&dungeon_entity)
           .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
 
-        if !dungeon.is_stairs_up(self.player_x, self.player_y){
+        if !dungeon_area.is_stairs_up(self.player_x, self.player_y){
           info!("not standing on dungeon exit");
           return Ok(());
         }
 
-        let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
-        let parent_hex_id = dungeon_location.get().get_parent_location_id();
+        if dungeon_area.current_level == 1{
+          let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
+          let parent_hex_id = dungeon_location.get().get_parent_location_id();
 
-        if let Some(hex_id) = parent_hex_id{
-          if let Some(wilderness_entity) = self.entity_manager.find_child_entity::<Wilderness>(hex_id){
-            if let Some(wilderness) = self.wilderness_cache.get(&wilderness_entity){
-              if let Some((entrance_x, entrance_y)) = wilderness.dungeon_entrance{
-                self.player_x = entrance_x;
-                self.player_y = entrance_y;
+          if let Some(hex_id) = parent_hex_id{
+            if let Some(wilderness_entity) = self.entity_manager.find_child_entity::<Wilderness>(hex_id){
+              if let Some(wilderness) = self.wilderness_cache.get(&wilderness_entity){
+                if let Some((entrance_x, entrance_y)) = wilderness.dungeon_entrance{
+                  self.player_x = entrance_x;
+                  self.player_y = entrance_y;
+                }
               }
+              self.view_mode = ViewMode::Wilderness(wilderness_entity);
+              self.camera.center_on(self.player_x, self.player_y);
+              return Ok(());
             }
-            self.view_mode = ViewMode::Wilderness(wilderness_entity);
-            self.camera.center_on(self.player_x, self.player_y);
-            return Ok(());
           }
-        }
 
-        self.exit_dungeon()?;
+          self.exit_dungeon()?;
+        }else{
+          let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
+          let seed = dungeon_location.get().get_seed().unwrap_or(0);
+
+          let new_level = dungeon_area.current_level - 1;
+          info!("ascending to level {}", new_level);
+
+          let generator = DungeonGenerator::new(seed as u64);
+          let new_area = generator.generate(dungeon_entity, &self.entity_manager, new_level)?;
+
+          if let Some((down_x, down_y)) = new_area.stairs_down{
+            self.player_x = down_x;
+            self.player_y = down_y
+          }
+
+          self.dungeon_cache.insert(dungeon_entity, new_area);
+          self.camera.center_on(self.player_x, self.player_y);
+        }
       },
     }
 
@@ -359,8 +378,31 @@ impl GameState{
           info!("no dungeon found at parent hex location");
         }
       },
-      ViewMode::Dungeon(_dungeon_entity) => {
-        info!("already in dungeon, stairs down not implemented yet");
+      ViewMode::Dungeon(dungeon_entity) => {
+        let dungeon_area = self.dungeon_cache.get(&dungeon_entity)
+          .ok_or_else(|| anyhow!("no dungeon found in cache"))?;
+
+        if !dungeon_area.is_stairs_down(self.player_x, self.player_y){
+          info!("not standing on stairs down");
+          return Ok(())
+        }
+
+        let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
+        let seed = dungeon_location.get().get_seed().unwrap_or(0);
+
+        let new_level = dungeon_area.current_level + 1;
+        info!("descending to level {}", new_level);
+
+        let generator = DungeonGenerator::new(seed as u64);
+        let new_area = generator.generate(dungeon_entity, &self.entity_manager, new_level)?;
+
+        if let Some((up_x, up_y)) = new_area.stairs_up{
+          self.player_x = up_x;
+          self.player_y = up_y
+        }
+
+        self.dungeon_cache.insert(dungeon_entity, new_area);
+        self.camera.center_on(self.player_x, self.player_y);
       },
     }
     Ok(())
@@ -372,7 +414,7 @@ impl GameState{
 
     if let std::collections::hash_map::Entry::Vacant(e) = self.dungeon_cache.entry(dungeon_entity) {
       info!("dungeon not cached, building area");
-      let dungeon_area = dungeon_generator.generate(dungeon_entity, &self.entity_manager)?;
+      let dungeon_area = dungeon_generator.generate(dungeon_entity, &self.entity_manager, 1)?;
       debug!("dungeon area: {:?}", dungeon_area);
       e.insert(dungeon_area);
     }

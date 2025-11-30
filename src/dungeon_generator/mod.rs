@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use crossterm::style::Color;
 use dagr_lib::components::world::{
-  dungeon_connection::DungeonConnection,
+  dungeon::Dungeon,
+  dungeon_connection::{DungeonConnection, ConnectionType},
   dungeon_passage::DungeonPassage,
   dungeon_room::DungeonRoom,
   location::Location,
@@ -37,11 +38,18 @@ impl DungeonGenerator{
     Self{seed}
   }
 
-  pub fn generate(&self, dungeon_entity: Entity, entity_manager: &EntityManager) -> Result<DungeonArea>{
+  pub fn generate(
+    &self,
+    dungeon_entity: Entity,
+    entity_manager: &EntityManager,
+    target_level: i32
+  ) -> Result<DungeonArea>{
     info!("building dungeon area");
     let dungeon_location = entity_manager.get_component::<Location, _>(dungeon_entity)?;
     let dungeon_location_id = dungeon_location.get().get_id();
-    let target_level = 1;
+
+    let dungeon = entity_manager.get_component::<Dungeon, _>(dungeon_entity)?;
+    let max_level = dungeon.get().get_depth_levels();
 
     info!("dungeon location_id: {}, loading level {}", dungeon_location_id, target_level);
     
@@ -98,6 +106,8 @@ impl DungeonGenerator{
       target_level, width, height, min_x, min_y, max_x, max_y);
 
     let mut area = DungeonArea::new(width, height);
+    area.set_current_level(target_level);
+    area.set_max_level(max_level);
 
     for spatial_data in &rooms{
       let rx = spatial_data.get_x() - min_x;
@@ -170,12 +180,45 @@ impl DungeonGenerator{
       }
     }
 
-    if let Some(entrance) = entrance_spatial{
-      let entrance_x = (entrance.get_x() + entrance.get_width() / 2) - min_x;
-      let entrance_y = (entrance.get_y() + entrance.get_length() / 2) - min_y;
-      area.set_entrance(entrance_x, entrance_y);
-      area.set_tile(entrance_x, entrance_y, DungeonTileType::StairsUp);
-      info!("dungeon entrance at {},{}", entrance_x, entrance_y);
+    let connection_entities = entity_manager.find_all_children::<DungeonConnection>(dungeon_location_id);
+    
+    for entity in connection_entities{
+      let connection = entity_manager.get_component::<DungeonConnection, _>(entity)?;
+      let cx_data = connection.get();
+
+      if cx_data.get_connection_type() == ConnectionType::StairsDown{
+        let from_id = cx_data.get_from_location_id();
+        let to_id = cx_data.get_to_location_id();
+
+        if let Some(from_room) = room_spatials.get(&from_id){
+          let stair_x = (from_room.get_x() + from_room.get_width() / 2) - min_x;
+          let stair_y = (from_room.get_y() - from_room.get_length() /2 ) - min_y;
+          area.set_tile(stair_x, stair_y, DungeonTileType::StairsDown);
+          area.set_stairs_down(stair_x, stair_y);
+          info!("dungeon stairs down at {},{}", stair_x, stair_y);
+        }
+
+        if let Some(to_room) = room_spatials.get(&to_id){
+          let stair_x = (to_room.get_x() + to_room.get_width() / 2) - min_x;
+          let stair_y = (to_room.get_y() + to_room.get_length() / 2) - min_y;
+          area.set_tile(stair_x, stair_y, DungeonTileType::StairsUp);
+          area.set_stairs_up(stair_x, stair_y);
+          info!("dungeon stairs up at {},{}", stair_x, stair_y);
+        }
+      }
+    }
+
+    if target_level == 1{
+      if let Some(entrance) = entrance_spatial{
+        let entrance_x = (entrance.get_x() + entrance.get_width() / 2) - min_x;
+        let entrance_y = (entrance.get_y() + entrance.get_length() / 2) - min_y;
+        area.set_entrance(entrance_x, entrance_y);
+        if area.stairs_up.is_none(){
+          area.set_tile(entrance_x, entrance_y, DungeonTileType::StairsUp);
+          area.set_stairs_up(entrance_x, entrance_y);
+        }
+        info!("dungeon entrance at {},{}", entrance_x, entrance_y);
+      }
     }
 
     Ok(area)
