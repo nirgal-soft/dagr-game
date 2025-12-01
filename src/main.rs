@@ -22,7 +22,6 @@ mod input;
 mod region_gen;
 mod renderer;
 mod ui;
-mod tiles;
 mod visiblity;
 mod wilderness_generator;
 mod world_map;

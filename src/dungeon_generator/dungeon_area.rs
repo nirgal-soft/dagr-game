@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use crate::tile::Tile;
+use crossterm::style::Color;
+use crate::renderer::{Tile, RenderConfig};
+use crate::visiblity::Visibility;
 
 pub enum DungeonTileType{
   Floor,
@@ -64,10 +66,14 @@ impl DungeonArea{
 
   pub fn set_tile(&mut self, x: i32, y: i32, tile_type: DungeonTileType){
     let tile = match tile_type{
-      DungeonTileType::Floor => Tile{symbol: '.', color: crossterm::style::Color::Grey},
-      DungeonTileType::Wall => Tile{symbol: '#', color: crossterm::style::Color::White},
-      DungeonTileType::StairsUp => Tile{symbol: '<', color: crossterm::style::Color::Yellow},
-      DungeonTileType::StairsDown => Tile{symbol: '>', color: crossterm::style::Color::Yellow},
+      DungeonTileType::Floor => Tile::new('.', Color::Grey)
+        .with_bg(Color::Rgb{r: 20, g: 20, b: 25}),
+      DungeonTileType::Wall => Tile::new('#', Color::White)
+        .with_bg(Color::Rgb{r: 40, g: 35, b: 30}),
+      DungeonTileType::StairsUp => Tile::new('<', Color::Yellow)
+        .with_bg(Color::Rgb{r: 50, g: 40, b: 20}),
+      DungeonTileType::StairsDown => Tile::new('>', Color::Yellow)
+        .with_bg(Color::Rgb{r: 50, g: 40, b: 20}),
     };
     self.tiles.insert((x, y), tile);
   }
@@ -88,6 +94,14 @@ impl DungeonArea{
     }
   }
 
+  pub fn is_opaque(&self, x: i32, y: i32) -> bool{
+    if let Some(tile) = self.tiles.get(&(x, y)){
+      tile.symbol == '#'
+    }else{
+      true
+    }
+  }
+
   pub fn is_stairs_up(&self, x: i32, y: i32) -> bool{
     if let Some(tile) = self.tiles.get(&(x, y)){
       tile.symbol == '<'
@@ -101,6 +115,26 @@ impl DungeonArea{
       tile.symbol == '>'
     }else{
       false
+    }
+  }
+
+  pub fn get_visible_tile(
+    &self,
+    x: i32,
+    y: i32,
+    visibility: Visibility,
+    config: &RenderConfig
+  ) -> Option<Tile>{
+    match visibility{
+      Visibility::Unseen => Some(Tile{
+        symbol: config.unseen_symbol,
+        fg: config.unseen_fg,
+        bg: config.unseen_bg,
+      }),
+      Visibility::Seen | Visibility::Visible => {
+        let tile = self.tiles.get(&(x, y))?;
+        Some(tile.with_visibility(visibility, config))
+      }
     }
   }
 }

@@ -3,12 +3,14 @@ use anyhow::Result;
 use crossterm::{
   cursor, 
   queue, 
+  style,
   style::{
-    Color, 
     ResetColor,
+    SetBackgroundColor,
     SetForegroundColor,
   },
 };
+use crate::renderer::Tile;
 use super::{draw_box, border_style::BorderStyle};
 
 pub struct Map{
@@ -20,17 +22,12 @@ pub struct Map{
 
 impl Map{
   pub fn new(x: u16, y: u16, w: u16, h: u16) -> Self{
-    Self{
-      x,
-      y,
-      w,
-      h,
-    }
+    Self{x,y,w,h}
   }
 
   pub fn draw<F>(&self, stdout: &mut io::Stdout, mut tile_fn: F) -> Result<()>
   where 
-    F: FnMut(u16, u16) -> Option<(char, Color)>
+    F: FnMut(u16, u16) -> Option<Tile>
   {
     draw_box(stdout, self.x, self.y, self.w, self.h, BorderStyle::SINGLE)?;
 
@@ -38,12 +35,16 @@ impl Map{
       for x in 1..self.w-1{
         queue!(stdout, cursor::MoveTo(self.x+x, self.y+y))?;
 
-        if let Some((symbol, color)) = tile_fn(x-1, y-1){
-          queue!(stdout, SetForegroundColor(color))?;
-          write!(stdout, "{}", symbol)?;
-          queue!(stdout, ResetColor)?;
+        if let Some(tile) = tile_fn(x-1, y-1){
+          queue!(
+            stdout,
+            SetForegroundColor(tile.fg),
+            SetBackgroundColor(tile.bg),
+            style::Print(tile.symbol),
+            ResetColor
+          )?;
         }else{
-          write!(stdout, " ")?;
+          queue!(stdout, ResetColor, style::Print(' '))?;
         }
       }
     }

@@ -3,12 +3,13 @@ use anyhow::Result;
 use crossterm::{queue, cursor, style::{self, Stylize, Color}};
 use tracing::{debug, error, info};
 use dagr_lib::ems::component::Component;
-use tile::Tile;
 use crate::game_state::{ViewMode, GameState};
 use crate::ui::{panel::Panel, stat_bar::StatBar, map::Map};
 
-pub mod tile;
 pub mod render_config;
+pub use render_config::RenderConfig;
+pub mod tile;
+pub use tile::Tile;
 
 pub struct Renderer{
   width: u16,
@@ -48,14 +49,14 @@ impl Renderer{
       let world_y = y as i32 + game_state.camera.y;
 
       if world_x == game_state.player_x && world_y == game_state.player_y{
-        return Some(('@', Color::Blue));
+        return Some(game_state.render_config.player_tile());
       }
 
       match game_state.map.get((world_x, world_y)){
         Some(entity) => {
           game_state.entity_manager.with::<Tile, _, _>(
             entity,
-            |tile| (tile.symbol, tile.color)
+            |tile| (tile.symbol, tile.fg)
           ).ok()
         }
         None => {
