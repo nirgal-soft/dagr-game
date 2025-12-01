@@ -3,9 +3,12 @@ use anyhow::Result;
 use crossterm::{queue, cursor, style::{self, Stylize, Color}};
 use tracing::{debug, error, info};
 use dagr_lib::ems::component::Component;
-use crate::tile::Tile;
+use tile::Tile;
 use crate::game_state::{ViewMode, GameState};
 use crate::ui::{panel::Panel, stat_bar::StatBar, map::Map};
+
+pub mod tile;
+pub mod render_config;
 
 pub struct Renderer{
   width: u16,
