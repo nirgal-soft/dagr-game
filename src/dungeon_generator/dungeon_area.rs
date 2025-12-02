@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use crossterm::style::Color;
+use tracing::{debug, error, info};
 use crate::renderer::{Tile, RenderConfig};
 use crate::visiblity::Visibility;
 
@@ -96,7 +97,12 @@ impl DungeonArea{
 
   pub fn is_opaque(&self, x: i32, y: i32) -> bool{
     if let Some(tile) = self.tiles.get(&(x, y)){
-      tile.symbol == '#'
+      // tile.symbol == '#'
+      let opaque = tile.symbol == '#';
+      if x < 5 && y < 5{
+        eprintln!("is_opaque({}, {}): symbole='{}', opaque={}", x, y, tile.symbol, opaque);
+      }
+      opaque
     }else{
       true
     }

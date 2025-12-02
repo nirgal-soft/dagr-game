@@ -56,11 +56,11 @@ impl Renderer{
         Some(entity) => {
           game_state.entity_manager.with::<Tile, _, _>(
             entity,
-            |tile| (tile.symbol, tile.fg)
+            |tile| *tile
           ).ok()
         }
         None => {
-          Some(('░', Color::DarkGrey))
+          Some(Tile::new('░', Color::DarkGrey))
         }
       }
     })?;
@@ -73,7 +73,7 @@ impl Renderer{
       let world_y = y as i32 + game_state.camera.y;
 
       if world_x == game_state.player_x && world_y == game_state.player_y{
-        return Some(('@', Color::Blue));
+        return Some(game_state.render_config.player_tile());
       }
 
       game_state.get_wilderness_tile(world_x, world_y)
@@ -87,10 +87,10 @@ impl Renderer{
       let world_y = y as i32 + game_state.camera.y;
 
       if world_x == game_state.player_x && world_y == game_state.player_y{
-        return Some(('@', Color::Blue));
+        return Some(game_state.render_config.player_tile());
       }
 
-      game_state.get_dungeon_tile(world_x, world_y)
+      game_state.get_visible_dungeon_tile(world_x, world_y)
     })?;
 
     Ok(())

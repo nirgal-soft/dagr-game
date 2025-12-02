@@ -19,8 +19,8 @@ impl Default for RenderConfig{
       unseen_fg: Color::Black,
       unseen_bg: Color::Black,
       player_symbol: '@',
-      player_fg: Color::White,
-      player_bg: Color::Blue,
+      player_fg: Color::Red,
+      player_bg: Color::Black,
       dim_factor: 0.4,
     }
   }

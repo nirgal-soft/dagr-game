@@ -18,7 +18,14 @@ use crossterm::{
 };
 use border_style::BorderStyle;
 
-pub fn draw_box(stdout: &mut io::Stdout, x: u16, y: u16, w: u16, h: u16, style: BorderStyle) -> Result<()>{
+pub fn draw_box(
+  stdout: &mut io::Stdout,
+  x: u16,
+  y: u16,
+  w: u16,
+  h: u16,
+  style: BorderStyle,
+) -> Result<()>{
   //top
   queue!(stdout, cursor::MoveTo(x, y))?;
   write!(stdout, "{}", style.top_left)?;
@@ -56,8 +63,17 @@ pub fn draw_text(stdout: &mut io::Stdout, x: u16, y: u16, text: &str, fg: Color,
   Ok(())
 }
 
-pub fn clear_region(stdout: &mut io::Stdout, x: u16, y: u16, w: u16, h: u16) -> Result<()>{
+pub fn clear_region(
+  stdout: &mut io::Stdout,
+  x: u16,
+  y: u16,
+  w: u16,
+  h: u16,
+  bg: Color,
+) -> Result<()>{
   let blank = " ".repeat(w as usize);
+
+  queue!(stdout, SetBackgroundColor(bg))?;
   
   for row in 0..h{
     queue!(stdout, cursor::MoveTo(x, y + row))?;

@@ -3,7 +3,11 @@ use anyhow::Result;
 use crossterm::{
   cursor, 
   queue, 
-  style::Color, 
+  style::{
+    Color, 
+    SetForegroundColor,
+    SetBackgroundColor,
+  },
 };
 use super::bar::Bar;
 
@@ -30,7 +34,11 @@ impl StatBar{
 
   pub fn draw(&self, stdout: &mut io::Stdout) -> Result<()>{
     //raw the label
-    queue!(stdout, cursor::MoveTo(self.x, self.y))?;
+    queue!(
+      stdout,
+      cursor::MoveTo(self.x, self.y),
+      SetForegroundColor(Color::White),
+    )?;
     write!(stdout, "{}: ", self.label)?;
 
     let label_len = self.label.len() + 2;

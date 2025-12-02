@@ -16,7 +16,8 @@ use dagr_lib::core::registry::EntityKind;
 use dagr_lib::ems::{entity_manager::EntityManager, component::Component};
 use crate::camera::Camera;
 use crate::dungeon_generator::{DungeonArea, DungeonGenerator};
-use crate::tile::Tile;
+use crate::renderer::{Tile, RenderConfig};
+use crate::visiblity::VisibilityMap;
 use crate::wilderness_generator::{WildernessArea, WildernessGenerator, wilderness_tile::WildernessTile};
 use crate::world_map::WorldMap;
 
@@ -34,6 +35,8 @@ pub struct GameState{
   pub player_x: i32,
   pub player_y: i32,
   pub view_mode: ViewMode,
+  pub render_config: RenderConfig,
+  pub visibility: VisibilityMap,
   wilderness_cache: HashMap<Entity, WildernessArea>,
   dungeon_cache: HashMap<Entity, DungeonArea>,
 }
@@ -47,12 +50,34 @@ impl GameState{
       player_x: 0,
       player_y: 0,
       view_mode: ViewMode::HexMap,
+      render_config: RenderConfig::default(),
+      visibility: VisibilityMap::new(8),
       wilderness_cache: HashMap::new(),
       dungeon_cache: HashMap::new(),
     };
     state.rebuild_map();
     state.attach_tiles();
     state
+  }
+
+  pub fn update_visibility(&mut self){
+    if let ViewMode::Dungeon(dungeon_entity) = self.view_mode{
+      if let Some(area) = self.dungeon_cache.get(&dungeon_entity){
+        self.visibility.update(self.player_x, self.player_y, |x, y|{
+          area.is_opaque(x, y)
+        });
+      }
+    }
+  }
+
+  pub fn get_visible_dungeon_tile(&self, x: i32, y: i32) -> Option<Tile>{
+    if let ViewMode::Dungeon(dungeon_entity) = self.view_mode{
+      if let Some(dungeon) = self.dungeon_cache.get(&dungeon_entity){
+        let visibility = self.visibility.get(x, y);
+        return dungeon.get_visible_tile(x, y, visibility, &self.render_config);
+      }
+    }
+    None
   }
 
   pub async fn move_player(&mut self, dx: i32, dy: i32) -> Result<()>{
@@ -196,22 +221,22 @@ impl GameState{
     }
   }
 
-  pub fn get_wilderness_tile(&self, x: i32, y: i32) -> Option<(char, Color)>{
+  pub fn get_wilderness_tile(&self, x: i32, y: i32) -> Option<Tile>{
     if let ViewMode::Wilderness(wilderness_entity) = self.view_mode{
       if let Some(wilderness) = self.wilderness_cache.get(&wilderness_entity){
         if let Some(wtile) = wilderness.get(x, y){
-          return Some((wtile.tile.symbol, wtile.tile.color))
+          return Some(wtile.tile)
         }
       }
     }
     None
   }
 
-  pub fn get_dungeon_tile(&self, x: i32, y: i32) -> Option<(char, Color)>{
+  pub fn get_dungeon_tile(&self, x: i32, y: i32) -> Option<Tile>{
     if let ViewMode::Dungeon(dungeon_entity) = self.view_mode{
       if let Some(dungeon) = self.dungeon_cache.get(&dungeon_entity){
         if let Some(tile) = dungeon.get_tile(x, y){
-          return Some((tile.symbol, tile.color))
+          return Some(*tile)
         }
       }
     }
@@ -347,6 +372,7 @@ impl GameState{
 
           self.dungeon_cache.insert(dungeon_entity, new_area);
           self.camera.center_on(self.player_x, self.player_y);
+          self.visibility.clear();
         }
       },
     }
@@ -403,6 +429,7 @@ impl GameState{
 
         self.dungeon_cache.insert(dungeon_entity, new_area);
         self.camera.center_on(self.player_x, self.player_y);
+        self.visibility.clear();
       },
     }
     Ok(())
@@ -429,6 +456,7 @@ impl GameState{
       self.player_y = entrance_y;
     }
     self.camera.center_on(self.player_x, self.player_y);
+    self.visibility.clear();
 
     Ok(())
   }

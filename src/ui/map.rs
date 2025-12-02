@@ -5,6 +5,7 @@ use crossterm::{
   queue, 
   style,
   style::{
+    Color,
     ResetColor,
     SetBackgroundColor,
     SetForegroundColor,
@@ -29,7 +30,14 @@ impl Map{
   where 
     F: FnMut(u16, u16) -> Option<Tile>
   {
-    draw_box(stdout, self.x, self.y, self.w, self.h, BorderStyle::SINGLE)?;
+    draw_box(
+      stdout,
+      self.x,
+      self.y,
+      self.w,
+      self.h,
+      BorderStyle::SINGLE,
+    )?;
 
     for y in 1..self.h-1{
       for x in 1..self.w-1{
@@ -41,13 +49,19 @@ impl Map{
             SetForegroundColor(tile.fg),
             SetBackgroundColor(tile.bg),
             style::Print(tile.symbol),
-            ResetColor
           )?;
         }else{
-          queue!(stdout, ResetColor, style::Print(' '))?;
+          queue!(
+            stdout,
+            SetForegroundColor(Color::Black),
+            SetBackgroundColor(Color::Black),
+            style::Print(' '),
+          )?;
         }
       }
     }
+
+    queue!(stdout, ResetColor)?;
 
     Ok(())
   }

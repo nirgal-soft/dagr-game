@@ -5,7 +5,10 @@ use crossterm::{
   queue, 
   style::{
     Attribute,
+    Color,
     SetAttribute,
+    SetForegroundColor,
+    SetBackgroundColor,
   },
 };
 use super::{draw_box, border_style::BorderStyle};
@@ -44,10 +47,22 @@ impl Panel{
   }
 
   pub fn draw(&self, stdout: &mut io::Stdout) -> Result<()>{
-    draw_box(stdout, self.x, self.y, self.w, self.h, BorderStyle::SINGLE)?;
+    draw_box(
+      stdout,
+      self.x,
+      self.y,
+      self.w,
+      self.h,
+      BorderStyle::SINGLE,
+    )?;
+
     if let Some(title_text) = &self.title{
       let title_x = self.x + 2;
-      queue!(stdout, cursor::MoveTo(title_x, self.y), SetAttribute(Attribute::Bold))?;
+      queue!(
+        stdout,
+        cursor::MoveTo(title_x, self.y),
+        SetAttribute(Attribute::Bold)
+      )?;
       write!(stdout, " {} ", title_text)?;
       queue!(stdout, SetAttribute(Attribute::Reset))?;
     }

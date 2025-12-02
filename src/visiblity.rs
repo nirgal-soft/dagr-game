@@ -8,21 +8,53 @@ pub enum Visibility{
   Visible,
 }
 
+#[derive(Clone, Copy)]
+pub struct Slope{
+  y: i32,
+  x: i32,
+}
+
+impl Slope{
+  pub fn new(y: i32, x: i32) -> Self{
+    Slope{y, x}
+  }
+
+  pub fn greater(&self, y: i32, x: i32) -> bool{
+    self.y * x > self.x * y
+  }
+
+  pub fn greater_or_equal(&self, y: i32, x: i32) -> bool{
+    self.y * x >= self.x * y
+  }
+
+  fn less(&self, y: i32, x: i32) -> bool{
+    self.y * x < self.x * y
+  }
+}
+
 pub struct VisibilityMap{
-  tiles: HashMap<(i32, i32), Visibility>,
+  visible: HashSet<(i32, i32)>,
+  seen: HashSet<(i32, i32)>,
   view_radius: i32,
 }
 
 impl VisibilityMap{
   pub fn new(view_radius: i32) -> Self{
     Self{
-      tiles: HashMap::new(),
+      visible: HashSet::new(),
+      seen: HashSet::new(),
       view_radius,
     }
   }
 
   pub fn get(&self, x: i32, y: i32) -> Visibility{
-    self.tiles.get(&(x, y)).copied().unwrap_or(Visibility::Unseen)
+    if self.visible.contains(&(x, y)){
+      Visibility::Visible
+    }else if self.seen.contains(&(x, y)){
+      Visibility::Seen
+    }else{
+      Visibility::Unseen
+    }
   }
 
   pub fn set_view_radius(&mut self, radius: i32){
@@ -30,141 +62,130 @@ impl VisibilityMap{
   }
 
   pub fn clear(&mut self){
-    self.tiles.clear();
+    self.visible.clear();
+    self.seen.clear();
   }
 
-  pub fn update<F>(&mut self, player_x: i32, player_y: i32, is_opaque: F)
+  pub fn set_visible(&mut self, x: i32, y: i32){
+    self.visible.insert((x, y));
+    self.seen.insert((x, y));
+  }
+
+  pub fn update<F>(&mut self, origin_x: i32, origin_y: i32, is_opaque: F)
   where 
     F: Fn(i32, i32) -> bool,
   {
-    for visibility in self.tiles.values_mut(){
-      if *visibility == Visibility::Visible{
-        *visibility = Visibility::Seen;
-      }
-    }
+    self.visible.clear();
 
-    let visible_tiles = self.compute_fov(player_x, player_y, &is_opaque);
-
-    for(x, y) in visible_tiles{
-      self.tiles.insert((x, y), Visibility::Visible);
-    }
+    self.compute_fov(origin_x, origin_y, &is_opaque)
   }
 
-  fn compute_fov<F>(&self, origin_x: i32, origin_y: i32, is_opaque: &F) -> HashSet<(i32, i32)>
+  fn compute_fov<F>(&mut self, origin_x: i32, origin_y: i32, is_opaque: &F)
   where
     F: Fn(i32, i32) -> bool,
   {
-    let mut visible = HashSet::new();
-    visible.insert((origin_x, origin_y));
+    self.set_visible(origin_x, origin_y);
 
     for octant in 0..8{
-      self.cast_light(
-        &mut visible,
+      self.compute_octant(
+        octant,
         origin_x,
         origin_y,
-        1,
-        1.0,
-        0.0,
-        octant,
         is_opaque,
+        1,
+        Slope::new(1, 1),
+        Slope::new(0, 1),
       );
     }
-
-    visible
   }
 
-  fn cast_light<F>(
-    &self,
-    visible: &mut HashSet<(i32, i32)>,
+  fn compute_octant<F>(
+    &mut self,
+    octant: u8,
     origin_x: i32,
     origin_y: i32,
-    row: i32,
-    mut start_slope: f32,
-    end_slope: f32,
-    octant: u8,
     is_opaque: &F,
-  ) where
+    mut x: i32,
+    mut top: Slope,
+    mut bottom: Slope,
+  ) where 
     F: Fn(i32, i32) -> bool,
   {
-    if start_slope < end_slope || row > self.view_radius{
-      return;
-    }
+    while x <= self.view_radius{
+      let top_y = if top.x == 1{
+        x
+      }else{
+        ((x*2+1)*top.y+top.x-1)/(top.x*2)
+      };
 
-    let mut prev_blocked = false;
-    let mut saved_start_slope = start_slope;
+      let bottom_y = if bottom.y == 0{
+        0
+      }else{
+        ((x*2-1)*bottom.y+bottom.x)/(bottom.x*2)
+      };
 
-    for col in -row..=0{
-      let col = -col;
+      let mut was_opaque: i32 = -1;
 
-      let (dx, dy) = self.transform_octant(col, row, octant);
-      let world_x = origin_x + dx;
-      let world_y = origin_y + dy;
+      for y in (bottom_y..=top_y).rev(){
+        let (tx, ty) = self.transform_octant(octant, origin_x, origin_y, x, y);
 
-      let left_slope = (col as f32 - 0.5) / (row as f32 + 0.5);
-      let right_slope = (col as f32 + 0.5) / (row as f32 - 0.5);
+        let in_range = x*x+y*y <= self.view_radius * self.view_radius;
 
-      if right_slope > start_slope{
-        continue;
+        if in_range{
+          self.set_visible(tx, ty);
+        }
+
+        let tile_opaque = !in_range || is_opaque(tx, ty);
+
+        if x != self.view_radius{
+          if tile_opaque{
+            if was_opaque == 0{
+              let new_top = Slope::new(y*2+1, x*2-1);
+              if !bottom.greater_or_equal(new_top.y, new_top.x){
+                self.compute_octant(
+                  octant,
+                  origin_x,
+                  origin_y,
+                  is_opaque,
+                  x+1,
+                  new_top,
+                  bottom,
+                );
+              }
+            }
+            was_opaque = 1;
+          }else{
+            if was_opaque == 1 && y > 0{
+              bottom = Slope::new(y*2+1, x*2+1);
+            }
+            was_opaque = 0;
+          }
+        }
       }
-      if left_slope < end_slope{
+
+      if was_opaque != 0{
         break;
       }
 
-      let distance_sq = dx * dx + dy * dy;
-      if distance_sq <= self.view_radius * self.view_radius{
-        visible.insert((world_x, world_y));
-      }
-
-      let blocked = is_opaque(world_x, world_y);
-
-      if prev_blocked{
-        if blocked{
-          saved_start_slope = right_slope;
-        }else{
-          prev_blocked = false;
-          start_slope = saved_start_slope;
-        }
-      }else if blocked && row < self.view_radius{
-        prev_blocked = true;
-        self.cast_light(
-          visible,
-          origin_x,
-          origin_y,
-          row+1,
-          start_slope,
-          left_slope,
-          octant,
-          is_opaque,
-        );
-        saved_start_slope = right_slope;
-      }
+      x += 1;
     }
-
-    if !prev_blocked{
-      self.cast_light(
-        visible,
-        origin_x,
-        origin_y,
-        row+1,
-        start_slope,
-        end_slope,
-        octant,
-        is_opaque,
-      );
+  }
+ 
+  fn transform_octant(&self, octant: u8, ox: i32, oy: i32, x: i32, y: i32) -> (i32, i32){
+    match octant{
+      0 => (ox + x, oy - y),
+      1 => (ox + y, oy - x),
+      2 => (ox - y, oy - x),
+      3 => (ox - x, oy - y),
+      4 => (ox - x, oy + y),
+      5 => (ox - y, oy + x),
+      6 => (ox + y, oy + x),
+      7 => (ox + x, oy + y),
+      _ => (ox, oy),
     }
   }
 
-  fn transform_octant(&self, col: i32, row: i32, octant: u8) -> (i32, i32){
-    match octant{
-      0 => (col, -row),
-      1 => (row, -col),
-      2 => (row, col),
-      3 => (col, row),
-      4 => (-col, row),
-      5 => (-row, col),
-      6 => (-row, -col),
-      7 => (-col, -row),
-      _ => (col, row),
-    }
+  fn is_in_range(&self, x: i32, y: i32) -> bool{
+    x * x + y * y <= self.view_radius * self.view_radius
   }
 }

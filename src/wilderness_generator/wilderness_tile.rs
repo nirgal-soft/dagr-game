@@ -1,5 +1,5 @@
 use crossterm::style::Color;
-use crate::tile::Tile;
+use crate::renderer::Tile;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum WildernessTileType{

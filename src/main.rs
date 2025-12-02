@@ -87,24 +87,37 @@ async fn run() -> Result<()>{
   let renderer = renderer::Renderer::new(w, h);
   let input = InputManager::new();
 
+  let mut needs_refresh = true;
+
   loop{
+    if needs_refresh{
+      renderer.render(&mut stdout, &game_state)?;
+      needs_refresh = false;
+    }
     std::thread::sleep(std::time::Duration::from_millis(16));
-    renderer.render(&mut stdout, &game_state)?;
 
     match input.poll_input(){
       Action::Quit => break,
       Action::Wait => std::thread::sleep(std::time::Duration::from_millis(16)),
       Action::Move(dx, dy) => {
         game_state.move_player(dx, dy).await?;
+        game_state.update_visibility();
+        needs_refresh = true;
       },
       Action::Ascend => {
         game_state.ascend().await?;
+        game_state.update_visibility();
+        needs_refresh = true;
       },
       Action::Descend => {
         game_state.descend().await?;
+        game_state.update_visibility();
+        needs_refresh = true;
       },
       Action::GenerateDungeon => {
         game_state.generate_dungeon().await?;
+        game_state.update_visibility();
+        needs_refresh = true;
       },
       _ => {},
     }

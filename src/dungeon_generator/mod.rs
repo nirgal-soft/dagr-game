@@ -23,7 +23,7 @@ use rand::{
   // Rng
 };
 use tracing::info;
-use crate::tile::Tile;
+use crate::renderer::Tile;
 
 //temp
 use dagr_lib::kits::util_kit::bsp::BSPNode;
