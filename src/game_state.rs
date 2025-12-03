@@ -24,7 +24,7 @@ use crate::world_map::WorldMap;
 pub enum ViewMode{
   HexMap,
   Wilderness(Entity),
-  Dungeon(Entity),
+  Dungeon(Entity, i32),
 }
 
 pub struct GameState{
@@ -60,14 +60,8 @@ impl GameState{
   }
 
   pub fn update_visibility(&mut self){
-    if let ViewMode::Dungeon(dungeon_entity) = self.view_mode{
-      let current_level = self.dungeon_cache
-        .iter()
-        .find(|((e, _), _)| *e == dungeon_entity)
-        .map(|((_, l), _)| *l)
-        .unwrap_or(1);
-
-      if let Some(area) = self.dungeon_cache.get_mut(&(dungeon_entity, current_level)){
+    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
+      if let Some(area) = self.dungeon_cache.get_mut(&(dungeon_entity, level)){
         self.visibility.update(self.player_x, self.player_y, |x, y|{
           area.is_opaque(x, y)
         });
@@ -79,14 +73,8 @@ impl GameState{
   }
 
   pub fn get_visible_dungeon_tile(&self, x: i32, y: i32) -> Option<Tile>{
-    if let ViewMode::Dungeon(dungeon_entity) = self.view_mode{
-      let current_level = self.dungeon_cache
-        .iter()
-        .find(|((e, _), _)| *e == dungeon_entity)
-        .map(|((_, l), _)| *l)
-        .unwrap_or(1);
-
-      if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, current_level)){
+    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
+      if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, level)){
         let currently_visible = self.visibility.is_visible(x, y);
         return dungeon.get_visible_tile(x, y, currently_visible, &self.render_config);
       }
@@ -114,8 +102,8 @@ impl GameState{
           }
         }
       }
-      ViewMode::Dungeon(dungeon_entity) => {
-        if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, 1)){
+      ViewMode::Dungeon(dungeon_entity, level) => {
+        if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, level)){
           if !dungeon.is_walkable(new_x, new_y){
             can_move = false;
           }
@@ -247,11 +235,9 @@ impl GameState{
   }
 
   pub fn get_dungeon_tile(&self, x: i32, y: i32) -> Option<Tile>{
-    if let ViewMode::Dungeon(dungeon_entity) = self.view_mode{
-      if let Some(dungeon) = self.dungeon_cache.get(&dungeon_entity){
-        if let Some(tile) = dungeon.get_tile(x, y){
-          return Some(*tile)
-        }
+    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
+      if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, level)){
+        return dungeon.get_tile(x, y).cloned();
       }
     }
     None
@@ -341,14 +327,7 @@ impl GameState{
       ViewMode::Wilderness(_wilderness_entity) => {
         self.exit_wilderness()?;
       },
-      ViewMode::Dungeon(dungeon_entity) => {
-        let current_level = self.dungeon_cache
-          .iter()
-          .find(|((e, _), area)| *e == dungeon_entity &&
-            self.dungeon_cache.get(&(*e, area.current_level)).is_some())
-          .map(|((_, _), area)| area.current_level)
-          .unwrap_or(1);
-
+      ViewMode::Dungeon(dungeon_entity, current_level) => {
         let dungeon_area = self.dungeon_cache.get(&(dungeon_entity, current_level))
           .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
 
@@ -397,6 +376,7 @@ impl GameState{
             self.player_y = down_y
           }
 
+          self.view_mode = ViewMode::Dungeon(dungeon_entity, new_level);
           self.camera.center_on(self.player_x, self.player_y);
           self.visibility.clear()
         }
@@ -430,7 +410,7 @@ impl GameState{
           info!("no dungeon found at parent hex location");
         }
       },
-      ViewMode::Dungeon(dungeon_entity) => {
+      ViewMode::Dungeon(dungeon_entity, current_level) => {
         let current_level = self.dungeon_cache
           .iter()
           .find(|((e, _), _)| *e == dungeon_entity)
@@ -465,6 +445,7 @@ impl GameState{
           self.player_y = up_y;
         }
 
+        self.view_mode = ViewMode::Dungeon(dungeon_entity, new_level);
         self.camera.center_on(self.player_x, self.player_y);
         self.visibility.clear();
       },
@@ -485,7 +466,7 @@ impl GameState{
       self.dungeon_cache.insert((dungeon_entity, level), dungeon_area);
     }
 
-    self.view_mode = ViewMode::Dungeon(dungeon_entity);
+    self.view_mode = ViewMode::Dungeon(dungeon_entity, level);
 
     let dungeon = self.dungeon_cache.get(&(dungeon_entity, level))
       .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
@@ -502,7 +483,7 @@ impl GameState{
 
   pub fn exit_dungeon(&mut self) -> Result<()>{
     match self.view_mode{
-      ViewMode::Dungeon(dungeon_entity) => {
+      ViewMode::Dungeon(dungeon_entity, _level) => {
         let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
         let parent_location_id = dungeon_location.get().parent_location_id;
 

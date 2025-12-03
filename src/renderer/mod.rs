@@ -29,10 +29,10 @@ impl Renderer{
       ViewMode::HexMap => {
         self.render_hexmap(stdout, &map, game_state)?;
       }
-      ViewMode::Wilderness(wilderness_entity) => {
+      ViewMode::Wilderness(_) => {
         self.render_wilderness(stdout, &map, game_state)?;
       }
-      ViewMode::Dungeon(dungeon_entity) => {
+      ViewMode::Dungeon(_, _) => {
         self.render_dungeon(stdout, &map, game_state)?;
       }
     }

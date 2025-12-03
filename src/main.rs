@@ -5,7 +5,7 @@ use crossterm::{execute, cursor, terminal};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 struct TerminalGuard;
 
@@ -19,6 +19,7 @@ mod camera;
 mod dungeon_generator;
 mod game_state;
 mod input;
+mod pathfinding;
 mod region_gen;
 mod renderer;
 mod ui;
