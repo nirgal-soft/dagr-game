@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Visibility{
@@ -6,30 +6,6 @@ pub enum Visibility{
   Unseen,
   Seen,
   Visible,
-}
-
-#[derive(Clone, Copy)]
-pub struct Slope{
-  y: i32,
-  x: i32,
-}
-
-impl Slope{
-  pub fn new(y: i32, x: i32) -> Self{
-    Slope{y, x}
-  }
-
-  pub fn greater(&self, y: i32, x: i32) -> bool{
-    self.y * x > self.x * y
-  }
-
-  pub fn greater_or_equal(&self, y: i32, x: i32) -> bool{
-    self.y * x >= self.x * y
-  }
-
-  fn less(&self, y: i32, x: i32) -> bool{
-    self.y * x < self.x * y
-  }
 }
 
 pub struct VisibilityMap{
@@ -57,6 +33,10 @@ impl VisibilityMap{
     }
   }
 
+  pub fn is_visible(&self, x: i32, y: i32) -> bool{
+    self.visible.contains(&(x, y))
+  }
+
   pub fn set_view_radius(&mut self, radius: i32){
     self.view_radius = radius;
   }
@@ -66,9 +46,13 @@ impl VisibilityMap{
     self.seen.clear();
   }
 
-  pub fn set_visible(&mut self, x: i32, y: i32){
+  fn set_visible(&mut self, x: i32, y: i32){
     self.visible.insert((x, y));
     self.seen.insert((x, y));
+  }
+
+  pub fn visible_tiles(&self) -> impl Iterator<Item = (i32, i32)> + '_{
+    self.visible.iter().copied()
   }
 
   pub fn update<F>(&mut self, origin_x: i32, origin_y: i32, is_opaque: F)
@@ -76,116 +60,65 @@ impl VisibilityMap{
     F: Fn(i32, i32) -> bool,
   {
     self.visible.clear();
+    self.set_visible(origin_x, origin_y);
 
-    self.compute_fov(origin_x, origin_y, &is_opaque)
+    let r = self.view_radius;
+    
+    // Cast rays to every point on the perimeter of view square
+    // (using more points gives better coverage)
+    for i in -r..=r{
+      // Cast to all four edges
+      self.cast_ray(origin_x, origin_y, origin_x + r, origin_y + i, &is_opaque);
+      self.cast_ray(origin_x, origin_y, origin_x - r, origin_y + i, &is_opaque);
+      self.cast_ray(origin_x, origin_y, origin_x + i, origin_y + r, &is_opaque);
+      self.cast_ray(origin_x, origin_y, origin_x + i, origin_y - r, &is_opaque);
+    }
   }
 
-  fn compute_fov<F>(&mut self, origin_x: i32, origin_y: i32, is_opaque: &F)
+  fn cast_ray<F>(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, is_opaque: &F)
   where
     F: Fn(i32, i32) -> bool,
   {
-    self.set_visible(origin_x, origin_y);
-
-    for octant in 0..8{
-      self.compute_octant(
-        octant,
-        origin_x,
-        origin_y,
-        is_opaque,
-        1,
-        Slope::new(1, 1),
-        Slope::new(0, 1),
-      );
-    }
-  }
-
-  fn compute_octant<F>(
-    &mut self,
-    octant: u8,
-    origin_x: i32,
-    origin_y: i32,
-    is_opaque: &F,
-    mut x: i32,
-    mut top: Slope,
-    mut bottom: Slope,
-  ) where 
-    F: Fn(i32, i32) -> bool,
-  {
-    while x <= self.view_radius{
-      let top_y = if top.x == 1{
-        x
-      }else{
-        ((x*2+1)*top.y+top.x-1)/(top.x*2)
-      };
-
-      let bottom_y = if bottom.y == 0{
-        0
-      }else{
-        ((x*2-1)*bottom.y+bottom.x)/(bottom.x*2)
-      };
-
-      let mut was_opaque: i32 = -1;
-
-      for y in (bottom_y..=top_y).rev(){
-        let (tx, ty) = self.transform_octant(octant, origin_x, origin_y, x, y);
-
-        let in_range = x*x+y*y <= self.view_radius * self.view_radius;
-
-        if in_range{
-          self.set_visible(tx, ty);
-        }
-
-        let tile_opaque = !in_range || is_opaque(tx, ty);
-
-        if x != self.view_radius{
-          if tile_opaque{
-            if was_opaque == 0{
-              let new_top = Slope::new(y*2+1, x*2-1);
-              if !bottom.greater_or_equal(new_top.y, new_top.x){
-                self.compute_octant(
-                  octant,
-                  origin_x,
-                  origin_y,
-                  is_opaque,
-                  x+1,
-                  new_top,
-                  bottom,
-                );
-              }
-            }
-            was_opaque = 1;
-          }else{
-            if was_opaque == 1 && y > 0{
-              bottom = Slope::new(y*2+1, x*2+1);
-            }
-            was_opaque = 0;
-          }
-        }
-      }
-
-      if was_opaque != 0{
+    // Bresenham's line algorithm
+    let dx = (x1 - x0).abs();
+    let dy = -(y1 - y0).abs();
+    let sx = if x0 < x1{ 1 }else{ -1 };
+    let sy = if y0 < y1{ 1 }else{ -1 };
+    let mut err = dx + dy;
+    
+    let mut x = x0;
+    let mut y = y0;
+    
+    let r_sq = self.view_radius * self.view_radius;
+    
+    loop{
+      // Check if within circular radius
+      let dist_x = x - x0;
+      let dist_y = y - y0;
+      if dist_x * dist_x + dist_y * dist_y > r_sq{
         break;
       }
-
-      x += 1;
+      
+      self.set_visible(x, y);
+      
+      // Stop AFTER marking opaque tile visible (we can see the wall, not through it)
+      if is_opaque(x, y) && (x != x0 || y != y0){
+        break;
+      }
+      
+      if x == x1 && y == y1{
+        break;
+      }
+      
+      let e2 = 2 * err;
+      if e2 >= dy{
+        err += dy;
+        x += sx;
+      }
+      if e2 <= dx{
+        err += dx;
+        y += sy;
+      }
     }
-  }
- 
-  fn transform_octant(&self, octant: u8, ox: i32, oy: i32, x: i32, y: i32) -> (i32, i32){
-    match octant{
-      0 => (ox + x, oy - y),
-      1 => (ox + y, oy - x),
-      2 => (ox - y, oy - x),
-      3 => (ox - x, oy - y),
-      4 => (ox - x, oy + y),
-      5 => (ox - y, oy + x),
-      6 => (ox + y, oy + x),
-      7 => (ox + x, oy + y),
-      _ => (ox, oy),
-    }
-  }
-
-  fn is_in_range(&self, x: i32, y: i32) -> bool{
-    x * x + y * y <= self.view_radius * self.view_radius
   }
 }

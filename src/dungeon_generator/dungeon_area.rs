@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crossterm::style::Color;
 use tracing::{debug, error, info};
 use crate::renderer::{Tile, RenderConfig};
@@ -21,6 +21,7 @@ pub struct DungeonArea{
   pub stairs_up: Option<(i32, i32)>,
   pub stairs_down: Option<(i32, i32)>,
   tiles: HashMap<(i32, i32), Tile>,
+  seen: HashSet<(i32, i32)>,
 }
 
 impl DungeonArea{
@@ -34,6 +35,7 @@ impl DungeonArea{
       stairs_up: None,
       stairs_down: None,
       tiles: HashMap::new(),
+      seen: HashSet::new(),
     }
   }
 
@@ -100,7 +102,7 @@ impl DungeonArea{
       // tile.symbol == '#'
       let opaque = tile.symbol == '#';
       if x < 5 && y < 5{
-        eprintln!("is_opaque({}, {}): symbole='{}', opaque={}", x, y, tile.symbol, opaque);
+        debug!("is_opaque({}, {}): symbole='{}', opaque={}", x, y, tile.symbol, opaque);
       }
       opaque
     }else{
@@ -124,18 +126,43 @@ impl DungeonArea{
     }
   }
 
+  pub fn mark_seen(&mut self, x: i32, y: i32){
+    self.seen.insert((x, y));
+  }
+
+  pub fn is_seen(&self, x: i32, y: i32) -> bool{
+    self.seen.contains(&(x, y))
+  }
+
+  pub fn mark_visible_as_seen<I>(&mut self, tiles: I)
+  where
+    I: IntoIterator<Item = (i32, i32)>
+  {
+    for (x, y) in tiles{
+      self.seen.insert((x, y));
+    }
+  }
+
   pub fn get_visible_tile(
     &self,
     x: i32,
     y: i32,
-    visibility: Visibility,
+    currently_visible: bool,
     config: &RenderConfig
   ) -> Option<Tile>{
+    let visibility = if currently_visible{
+      Visibility::Visible
+    }else if self.seen.contains(&(x, y)){
+      Visibility::Seen
+    }else{
+      Visibility::Unseen
+    };
+
     match visibility{
       Visibility::Unseen => Some(Tile{
         symbol: config.unseen_symbol,
         fg: config.unseen_fg,
-        bg: config.unseen_bg,
+        bg: config.unseen_bg
       }),
       Visibility::Seen | Visibility::Visible => {
         let tile = self.tiles.get(&(x, y))?;

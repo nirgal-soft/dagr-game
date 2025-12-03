@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use anyhow::{anyhow, Context, Result};
-use crossterm::style::Color;
+use anyhow::{anyhow, Result};
 use hecs::Entity;
 use serde_json::json;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 use dagr_lib::components::world::{
   dungeon::Dungeon,
-  hex::{Hex, HexData},
+  hex::Hex,
   location::Location,
   spatial::Spatial,
   wilderness::Wilderness
@@ -18,7 +17,7 @@ use crate::camera::Camera;
 use crate::dungeon_generator::{DungeonArea, DungeonGenerator};
 use crate::renderer::{Tile, RenderConfig};
 use crate::visiblity::VisibilityMap;
-use crate::wilderness_generator::{WildernessArea, WildernessGenerator, wilderness_tile::WildernessTile};
+use crate::wilderness_generator::{WildernessArea, WildernessGenerator};
 use crate::world_map::WorldMap;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -38,7 +37,7 @@ pub struct GameState{
   pub render_config: RenderConfig,
   pub visibility: VisibilityMap,
   wilderness_cache: HashMap<Entity, WildernessArea>,
-  dungeon_cache: HashMap<Entity, DungeonArea>,
+  dungeon_cache: HashMap<(Entity, i32), DungeonArea>,
 }
 
 impl GameState{
@@ -62,19 +61,34 @@ impl GameState{
 
   pub fn update_visibility(&mut self){
     if let ViewMode::Dungeon(dungeon_entity) = self.view_mode{
-      if let Some(area) = self.dungeon_cache.get(&dungeon_entity){
+      let current_level = self.dungeon_cache
+        .iter()
+        .find(|((e, _), _)| *e == dungeon_entity)
+        .map(|((_, l), _)| *l)
+        .unwrap_or(1);
+
+      if let Some(area) = self.dungeon_cache.get_mut(&(dungeon_entity, current_level)){
         self.visibility.update(self.player_x, self.player_y, |x, y|{
           area.is_opaque(x, y)
         });
+
+        let visible: Vec<_> = self.visibility.visible_tiles().collect();
+        area.mark_visible_as_seen(visible);
       }
     }
   }
 
   pub fn get_visible_dungeon_tile(&self, x: i32, y: i32) -> Option<Tile>{
     if let ViewMode::Dungeon(dungeon_entity) = self.view_mode{
-      if let Some(dungeon) = self.dungeon_cache.get(&dungeon_entity){
-        let visibility = self.visibility.get(x, y);
-        return dungeon.get_visible_tile(x, y, visibility, &self.render_config);
+      let current_level = self.dungeon_cache
+        .iter()
+        .find(|((e, _), _)| *e == dungeon_entity)
+        .map(|((_, l), _)| *l)
+        .unwrap_or(1);
+
+      if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, current_level)){
+        let currently_visible = self.visibility.is_visible(x, y);
+        return dungeon.get_visible_tile(x, y, currently_visible, &self.render_config);
       }
     }
     None
@@ -101,7 +115,7 @@ impl GameState{
         }
       }
       ViewMode::Dungeon(dungeon_entity) => {
-        if let Some(dungeon) = self.dungeon_cache.get(&dungeon_entity){
+        if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, 1)){
           if !dungeon.is_walkable(new_x, new_y){
             can_move = false;
           }
@@ -328,15 +342,22 @@ impl GameState{
         self.exit_wilderness()?;
       },
       ViewMode::Dungeon(dungeon_entity) => {
-        let dungeon_area = self.dungeon_cache.get(&dungeon_entity)
+        let current_level = self.dungeon_cache
+          .iter()
+          .find(|((e, _), area)| *e == dungeon_entity &&
+            self.dungeon_cache.get(&(*e, area.current_level)).is_some())
+          .map(|((_, _), area)| area.current_level)
+          .unwrap_or(1);
+
+        let dungeon_area = self.dungeon_cache.get(&(dungeon_entity, current_level))
           .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
 
         if !dungeon_area.is_stairs_up(self.player_x, self.player_y){
-          info!("not standing on dungeon exit");
+          info!("not standing on dungeon stairs up");
           return Ok(());
         }
 
-        if dungeon_area.current_level == 1{
+        if current_level == 1{
           let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
           let parent_hex_id = dungeon_location.get().get_parent_location_id();
 
@@ -350,7 +371,7 @@ impl GameState{
               }
               self.view_mode = ViewMode::Wilderness(wilderness_entity);
               self.camera.center_on(self.player_x, self.player_y);
-              return Ok(());
+              return Ok(())
             }
           }
 
@@ -359,20 +380,25 @@ impl GameState{
           let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
           let seed = dungeon_location.get().get_seed().unwrap_or(0);
 
-          let new_level = dungeon_area.current_level - 1;
-          info!("ascending to level {}", new_level);
+          let new_level = current_level - 1;
+          info!("ascending to dungeon level {}", new_level);
 
-          let generator = DungeonGenerator::new(seed as u64);
-          let new_area = generator.generate(dungeon_entity, &self.entity_manager, new_level)?;
+          if !self.dungeon_cache.contains_key(&(dungeon_entity, new_level)){
+            let generator = DungeonGenerator::new(seed as u64);
+            let new_area = generator.generate(dungeon_entity, &self.entity_manager, new_level)?;
+            self.dungeon_cache.insert((dungeon_entity, new_level), new_area);
+          }
+
+          let new_area = self.dungeon_cache.get(&(dungeon_entity, new_level))
+            .ok_or_else(|| anyhow!("failed to get new level"))?;
 
           if let Some((down_x, down_y)) = new_area.stairs_down{
             self.player_x = down_x;
             self.player_y = down_y
           }
 
-          self.dungeon_cache.insert(dungeon_entity, new_area);
           self.camera.center_on(self.player_x, self.player_y);
-          self.visibility.clear();
+          self.visibility.clear()
         }
       },
     }
@@ -405,50 +431,63 @@ impl GameState{
         }
       },
       ViewMode::Dungeon(dungeon_entity) => {
-        let dungeon_area = self.dungeon_cache.get(&dungeon_entity)
+        let current_level = self.dungeon_cache
+          .iter()
+          .find(|((e, _), _)| *e == dungeon_entity)
+          .and_then(|((_, _), area)| Some(area.current_level))
+          .unwrap_or(1);
+
+        let dungeon_area = self.dungeon_cache.get(&(dungeon_entity, current_level))
           .ok_or_else(|| anyhow!("no dungeon found in cache"))?;
 
         if !dungeon_area.is_stairs_down(self.player_x, self.player_y){
-          info!("not standing on stairs down");
+          info!("not standing on dungeon stairs down");
           return Ok(())
         }
 
         let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
         let seed = dungeon_location.get().get_seed().unwrap_or(0);
 
-        let new_level = dungeon_area.current_level + 1;
-        info!("descending to level {}", new_level);
+        let new_level = current_level + 1;
+        info!("descending to dungeon level {}", new_level);
 
-        let generator = DungeonGenerator::new(seed as u64);
-        let new_area = generator.generate(dungeon_entity, &self.entity_manager, new_level)?;
+        if !self.dungeon_cache.contains_key(&(dungeon_entity, new_level)){
+          let generator = DungeonGenerator::new(seed as u64);
+          let new_area = generator.generate(dungeon_entity, &self.entity_manager, new_level)?;
+          self.dungeon_cache.insert((dungeon_entity, new_level), new_area);
+        }
+
+        let new_area = self.dungeon_cache.get(&(dungeon_entity, new_level))
+          .ok_or_else(|| anyhow!("failed to get new level"))?;
 
         if let Some((up_x, up_y)) = new_area.stairs_up{
           self.player_x = up_x;
-          self.player_y = up_y
+          self.player_y = up_y;
         }
 
-        self.dungeon_cache.insert(dungeon_entity, new_area);
         self.camera.center_on(self.player_x, self.player_y);
         self.visibility.clear();
       },
     }
+
     Ok(())
   }
 
   pub async fn enter_dungeon(&mut self, dungeon_entity: Entity) -> Result<()>{
     info!("entering dungeon");
     let dungeon_generator = DungeonGenerator::new(0);
+    let level = 1;
 
-    if let std::collections::hash_map::Entry::Vacant(e) = self.dungeon_cache.entry(dungeon_entity) {
-      info!("dungeon not cached, building area");
-      let dungeon_area = dungeon_generator.generate(dungeon_entity, &self.entity_manager, 1)?;
+    if !self.dungeon_cache.contains_key(&(dungeon_entity, level)){
+      info!("dungeon level {} not cached, generating area", level);
+      let dungeon_area = dungeon_generator.generate(dungeon_entity, &self.entity_manager, level)?;
       debug!("dungeon area: {:?}", dungeon_area);
-      e.insert(dungeon_area);
+      self.dungeon_cache.insert((dungeon_entity, level), dungeon_area);
     }
 
     self.view_mode = ViewMode::Dungeon(dungeon_entity);
 
-    let dungeon = self.dungeon_cache.get(&dungeon_entity)
+    let dungeon = self.dungeon_cache.get(&(dungeon_entity, level))
       .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
 
     if let Some((entrance_x, entrance_y)) = dungeon.entrance{
