@@ -15,6 +15,7 @@ impl Drop for TerminalGuard {
     let _ = terminal::disable_raw_mode();
   }
 }
+mod area;
 mod camera;
 mod dungeon_generator;
 mod game_state;
@@ -91,6 +92,11 @@ async fn run() -> Result<()>{
   let mut needs_refresh = true;
 
   loop{
+    if game_state.is_auto_navigating() && game_state.popup_message.is_none(){
+      game_state.step_navigation().await?;
+      needs_refresh = true;
+    }
+
     if needs_refresh{
       renderer.render(&mut stdout, &game_state)?;
       needs_refresh = false;
@@ -100,19 +106,32 @@ async fn run() -> Result<()>{
     match input.poll_input(){
       Action::Quit => break,
       Action::Wait => std::thread::sleep(std::time::Duration::from_millis(16)),
+      Action::Dismiss => {
+        if game_state.popup_message.is_some(){
+          game_state.dismiss_popup();
+          needs_refresh = true;
+        }
+      }
       Action::Move(dx, dy) => {
+        game_state.cancel_navigation();
         game_state.move_player(dx, dy).await?;
         game_state.update_visibility();
         needs_refresh = true;
       },
       Action::Ascend => {
+        game_state.cancel_navigation();
         game_state.ascend().await?;
         game_state.update_visibility();
         needs_refresh = true;
       },
       Action::Descend => {
+        game_state.cancel_navigation();
         game_state.descend().await?;
         game_state.update_visibility();
+        needs_refresh = true;
+      },
+      Action::Explore => {
+        game_state.start_exploring();
         needs_refresh = true;
       },
       Action::GenerateDungeon => {

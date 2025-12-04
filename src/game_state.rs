@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
 use anyhow::{anyhow, Result};
 use hecs::Entity;
@@ -15,6 +15,13 @@ use dagr_lib::core::registry::EntityKind;
 use dagr_lib::ems::{entity_manager::EntityManager, component::Component};
 use crate::camera::Camera;
 use crate::dungeon_generator::{DungeonArea, DungeonGenerator};
+use crate::pathfinding::{
+  Pos,
+  a_star::{
+    find_path,
+    find_path_to_nearest,
+  },
+};
 use crate::renderer::{Tile, RenderConfig};
 use crate::visiblity::VisibilityMap;
 use crate::wilderness_generator::{WildernessArea, WildernessGenerator};
@@ -38,6 +45,9 @@ pub struct GameState{
   pub visibility: VisibilityMap,
   wilderness_cache: HashMap<Entity, WildernessArea>,
   dungeon_cache: HashMap<(Entity, i32), DungeonArea>,
+  pub path_queue: VecDeque<Pos>,
+  pub popup_message: Option<String>,
+  pub is_auto_exploring: bool,
 }
 
 impl GameState{
@@ -53,6 +63,9 @@ impl GameState{
       visibility: VisibilityMap::new(8),
       wilderness_cache: HashMap::new(),
       dungeon_cache: HashMap::new(),
+      path_queue: VecDeque::new(),
+      popup_message: None,
+      is_auto_exploring: false,
     };
     state.rebuild_map();
     state.attach_tiles();
@@ -332,7 +345,7 @@ impl GameState{
           .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
 
         if !dungeon_area.is_stairs_up(self.player_x, self.player_y){
-          info!("not standing on dungeon stairs up");
+          self.navigate_to_stairs_up();
           return Ok(());
         }
 
@@ -421,7 +434,7 @@ impl GameState{
           .ok_or_else(|| anyhow!("no dungeon found in cache"))?;
 
         if !dungeon_area.is_stairs_down(self.player_x, self.player_y){
-          info!("not standing on dungeon stairs down");
+          self.navigate_to_stairs_down();
           return Ok(())
         }
 
@@ -505,6 +518,175 @@ impl GameState{
         Ok(())
       }
       _ => Err(anyhow!("not currently in dungeon mode")),
+    }
+  }
+
+  pub fn dismiss_popup(&mut self){
+    self.popup_message = None;
+  }
+
+  pub fn show_popup(&mut self, message: impl Into<String>){
+    self.popup_message = Some(message.into());
+  }
+
+  pub fn is_auto_navigating(&self) -> bool{
+    !self.path_queue.is_empty()
+  }
+
+  pub fn cancel_navigation(&mut self){
+    self.path_queue.clear();
+    self.is_auto_exploring = false;
+  }
+
+  pub async fn step_navigation(&mut self) -> Result<bool>{
+    if let Some((next_x, next_y)) = self.path_queue.pop_front(){
+      let dx = next_x - self.player_x;
+      let dy = next_y - self.player_y;
+      self.move_player(dx, dy).await?;
+      self.update_visibility();
+
+      if self.is_auto_exploring && self.path_queue.is_empty(){
+        self.find_next_exploration_target();
+      }
+
+      Ok(true)
+    }else{
+      Ok(false)
+    }
+  }
+
+  pub fn start_exploring(&mut self){
+    if let ViewMode::Dungeon(_, _) = self.view_mode{
+      self.is_auto_exploring = true;
+      self.find_next_exploration_target();
+    }else{
+      self.show_popup("Not in a dungeon");
+    }
+  }
+
+  fn find_next_exploration_target(&mut self){
+    if !self.is_auto_exploring{
+      return;
+    }
+
+    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
+      if let Some(area) = self.dungeon_cache.get(&(dungeon_entity, level)){
+        let frontiers = area.find_exploration_frontiers();
+
+        //debug logging
+        info!("auto-explore: found {} frontiers", frontiers.len());
+        info!("player at ({}, {}), is_seen: {}, is_walkable: {}",
+          self.player_x, self.player_y,
+          area.is_seen(self.player_x, self.player_y),
+          area.is_walkable(self.player_x, self.player_y)
+        );
+
+        
+        if frontiers.is_empty(){
+          self.is_auto_exploring = false;
+          self.show_popup("Nowhere left to explore");
+          return;
+        }
+
+        info!("total tiles seen: {}", area.seen_count());
+        let directions = [
+          (-1, -1), (0, -1), (1, -1),
+          (-1,  0),          (1,  0),
+          (-1,  1), (0,  1), (1,  1),
+        ];
+        for (dx, dy) in directions {
+          let nx = self.player_x + dx;
+          let ny = self.player_y + dy;
+          info!("  neighbor ({}, {}): seen={}, walkable={}, both={}", 
+            nx, ny,
+            area.is_seen(nx, ny),
+            area.is_walkable(nx, ny),
+            area.is_seen_and_walkable(nx, ny));
+        }
+
+        let start = (self.player_x, self.player_y);
+        let result = find_path_to_nearest(start, frontiers.clone(), |x, y|{
+          area.is_seen_and_walkable(x, y)
+        });
+
+        match result{
+          Some((path, goal)) => {
+            info!("found path to {:?} with {} steps", goal, path.len());
+            self.path_queue = path.into_iter().collect();
+          }
+          None => {
+            info!("pathfinding failed. first few frontiers: {:?}", &frontiers[..frontiers.len().min(5)]);
+            self.is_auto_exploring = false;
+            self.show_popup("No path to explore");
+          }
+        }
+      }
+    }
+  }
+
+  pub fn navigate_to_stairs_up(&mut self){
+    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
+      if let Some(area) = self.dungeon_cache.get(&(dungeon_entity, level)){
+        if area.is_stairs_up(self.player_x, self.player_y){
+          self.show_popup("Already on stairs up - press `<` to ascend");
+          return;
+        }
+
+        let goals = area.find_seen_stairs_up();
+        if goals.is_empty(){
+          self.show_popup("No stairs up visible");
+          return;
+        }
+
+        let start = (self.player_x, self.player_y);
+        let result = find_path_to_nearest(start, goals, |x, y|{
+          area.is_seen_and_walkable(x, y)
+        });
+
+        match result{
+          Some((path, _)) => {
+            self.path_queue = path.into_iter().collect();
+          }
+          None => {
+            self.show_popup("No path to stairs up");
+          }
+        }
+      }
+    }else{
+      self.show_popup("Not in a dungeon");
+    }
+  }
+
+  pub fn navigate_to_stairs_down(&mut self){
+    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
+      if let Some(area) = self.dungeon_cache.get(&(dungeon_entity, level)){
+        if area.is_stairs_down(self.player_x, self.player_y){
+          self.show_popup("Already on stairs down - press `>` to descend");
+          return;
+        }
+
+        let goals = area.find_seen_stairs_down();
+        if goals.is_empty(){
+          self.show_popup("No stairs down visible");
+          return;
+        }
+
+        let start = (self.player_x, self.player_y);
+        let result = find_path_to_nearest(start, goals, |x, y|{
+          area.is_seen_and_walkable(x, y)
+        });
+
+        match result{
+          Some((path, _)) => {
+            self.path_queue = path.into_iter().collect();
+          }
+          None => {
+            self.show_popup("No path to stairs down");
+          }
+        }
+      }
+    }else{
+      self.show_popup("Not in a dungeon");
     }
   }
 }

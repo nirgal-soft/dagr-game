@@ -2,6 +2,7 @@ pub mod bar;
 pub mod border_style;
 pub mod map;
 pub mod panel;
+pub mod popup;
 pub mod stat_bar;
 
 use std::io::{self, Write};

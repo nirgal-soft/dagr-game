@@ -1,9 +1,10 @@
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap};
+use super::Pos;
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Node{
-  pos: (i32, i32),
+  pos: Pos,
   cost: i32,
   priority: i32,
 }
@@ -20,11 +21,11 @@ impl PartialOrd for Node{
   }
 }
 
-fn heuristic(a: (i32, i32), b: (i32, i32)) -> i32{
+fn heuristic(a: Pos, b: Pos) -> i32{
   (a.0 - b.0).abs().max((a.1 - b.1).abs())
 }
 
-pub fn find_path<F>(start: (i32, i32), goal: (i32, i32), is_walkable: F) -> Option<Vec<(i32, i32)>>
+pub fn find_path<F>(start: Pos, goal: Pos, is_walkable: F) -> Option<Vec<Pos>>
 where 
   F : Fn(i32, i32) -> bool,
 {
@@ -33,8 +34,8 @@ where
   }
 
   let mut open = BinaryHeap::new();
-  let mut came_from: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
-  let mut cost_so_far: HashMap<(i32, i32), i32> = HashMap::new();
+  let mut came_from: HashMap<Pos, Pos> = HashMap::new();
+  let mut cost_so_far: HashMap<Pos, i32> = HashMap::new();
 
   open.push(Node{
     pos: start,
@@ -92,13 +93,13 @@ where
 }
 
 pub fn find_path_to_nearest<F, I>(
-  start: (i32, i32),
+  start: Pos,
   goals: I,
   is_walkable: F,
-) -> Option<(Vec<(i32, i32)> , (i32, i32))>
+) -> Option<(Vec<Pos> , Pos)>
 where 
   F: Fn(i32, i32) -> bool,
-  I: IntoIterator<Item = (i32, i32)>,
+  I: IntoIterator<Item = Pos>,
 {
   let goals: Vec<_> = goals.into_iter().collect();
 
@@ -106,8 +107,8 @@ where
     return None;
   }
 
-  let mut best_path: Option<Vec<(i32, i32)>> = None;
-  let mut best_goal: Option<(i32, i32)> = None;
+  let mut best_path: Option<Vec<Pos>> = None;
+  let mut best_goal: Option<Pos> = None;
 
   for goal in goals{
     if let Some(path) = find_path(start, goal, &is_walkable){

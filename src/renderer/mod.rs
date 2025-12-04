@@ -2,9 +2,8 @@ use std::io::Write;
 use anyhow::Result;
 use crossterm::{queue, cursor, style::{self, Stylize, Color}};
 use tracing::{debug, error, info};
-use dagr_lib::ems::component::Component;
 use crate::game_state::{ViewMode, GameState};
-use crate::ui::{panel::Panel, stat_bar::StatBar, map::Map};
+use crate::ui::{map::Map, stat_bar::StatBar, panel::Panel, popup::Popup};
 
 pub mod render_config;
 pub use render_config::RenderConfig;
@@ -35,6 +34,11 @@ impl Renderer{
       ViewMode::Dungeon(_, _) => {
         self.render_dungeon(stdout, &map, game_state)?;
       }
+    }
+
+    if let Some(ref message) = game_state.popup_message{
+      let popup = Popup::new(message.clone(), self.width, self.height);
+      popup.draw(stdout)?;
     }
 
     self.render_ui(stdout, game_state)?;

@@ -7,8 +7,10 @@ pub enum Action{
   Wait,
   Ascend,
   Descend,
-  None,
   GenerateDungeon,
+  Dismiss,
+  Explore,
+  None,
 }
 
 #[derive(Default, Debug)]
@@ -52,11 +54,10 @@ impl InputManager{
       KeyCode::Char('n') => Action::Move(1, 1),
       KeyCode::Char('<') => Action::Ascend,
       KeyCode::Char('>') => Action::Descend,
-
+      KeyCode::Char(' ') => Action::Dismiss,
       KeyCode::Char('q') => Action::Quit,
-
       KeyCode::Char('.') => Action::Wait,
-
+      KeyCode::Char('o') => Action::Explore,
       KeyCode::Char('D') => Action::GenerateDungeon,
 
       _ => Action::None,

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use crossterm::style::Color;
-use tracing::{debug, error, info};
 use crate::renderer::{Tile, RenderConfig};
+use crate::pathfinding::Pos;
 use crate::visiblity::Visibility;
 
 pub enum DungeonTileType{
@@ -59,14 +59,6 @@ impl DungeonArea{
     self.stairs_down = Some((x, y));
   }
 
-  pub fn can_descend(&self) -> bool{
-    self.current_level < self.max_level && self.stairs_down.is_some()
-  }
-
-  pub fn can_ascend(&self) -> bool{
-    self.stairs_up.is_some()
-  }
-
   pub fn set_tile(&mut self, x: i32, y: i32, tile_type: DungeonTileType){
     let tile = match tile_type{
       DungeonTileType::Floor => Tile::new('.', Color::Grey)
@@ -81,14 +73,6 @@ impl DungeonArea{
     self.tiles.insert((x, y), tile);
   }
 
-  pub fn get_tile(&self, x: i32, y: i32) -> Option<&Tile>{
-    self.tiles.get(&(x, y))
-  }
-
-  pub fn contains(&self, x: i32, y: i32) -> bool{
-    x >= 0 && x < self.width && y >= 0 && y < self.height
-  }
-
   pub fn is_walkable(&self, x: i32, y: i32) -> bool{
     if let Some(tile) = self.tiles.get(&(x, y)){
       ['.', '<', '>'].contains(&tile.symbol)
@@ -99,12 +83,7 @@ impl DungeonArea{
 
   pub fn is_opaque(&self, x: i32, y: i32) -> bool{
     if let Some(tile) = self.tiles.get(&(x, y)){
-      // tile.symbol == '#'
-      let opaque = tile.symbol == '#';
-      if x < 5 && y < 5{
-        debug!("is_opaque({}, {}): symbole='{}', opaque={}", x, y, tile.symbol, opaque);
-      }
-      opaque
+      tile.symbol == '#'
     }else{
       true
     }
@@ -169,5 +148,58 @@ impl DungeonArea{
         Some(tile.with_visibility(visibility, config))
       }
     }
+  }
+
+  pub fn find_seen_stairs_up(&self) -> Vec<Pos>{
+    self.tiles
+      .iter()
+      .filter(|((x, y), tile)| tile.symbol == '<' && self.seen.contains(&(*x, *y)))
+      .map(|((x, y), _)| (*x, *y))
+      .collect()
+  }
+
+  pub fn find_seen_stairs_down(&self) -> Vec<Pos>{
+    self.tiles
+      .iter()
+      .filter(|((x, y), tile)| tile.symbol == '>' && self.seen.contains(&(*x, *y)))
+      .map(|((x, y), _)| (*x, *y))
+      .collect()
+  }
+
+  pub fn is_seen_and_walkable(&self, x: i32, y: i32) -> bool{
+    self.is_walkable(x, y) && self.seen.contains(&(x, y))
+  }
+
+  pub fn find_exploration_frontiers(&self) -> Vec<Pos>{
+    let mut frontiers = Vec::new();
+
+    for &(x, y) in self.seen.iter(){
+      if !self.is_walkable(x, y){
+        continue;
+      }
+
+      let neighbors = [
+        (x-1, y-1), (x, y-1), (x+1, y-1),
+        (x-1, y), (x+1, y),
+        (x-1, y+1), (x, y+1), (x+1, y+1),
+      ];
+
+      for (nx, ny) in neighbors{
+        if self.tiles.contains_key(&(nx, ny)) && !self.seen.contains(&(nx, ny)){
+          frontiers.push((x, y));
+          break;
+        }
+      }
+    }
+
+    frontiers
+  }
+
+  pub fn is_fully_explored(&self) -> bool{
+    self.find_exploration_frontiers().is_empty()
+  }
+
+  pub fn seen_count(&self) -> usize{
+    self.seen.len()
   }
 }

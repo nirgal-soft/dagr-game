@@ -4,7 +4,7 @@ use dagr_lib::kits::hexkit::terrain::Terrain;
 use crate::visiblity::Visibility;
 use super::render_config::RenderConfig;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tile{
   pub symbol: char,
   pub fg: Color,
