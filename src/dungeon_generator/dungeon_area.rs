@@ -59,6 +59,10 @@ impl DungeonArea{
     self.stairs_down = Some((x, y));
   }
 
+  pub fn get_tile(&self, x: i32, y: i32)-> Option<&Tile>{
+    self.tiles.get(&(x, y))
+  }
+
   pub fn set_tile(&mut self, x: i32, y: i32, tile_type: DungeonTileType){
     let tile = match tile_type{
       DungeonTileType::Floor => Tile::new('.', Color::Grey)
