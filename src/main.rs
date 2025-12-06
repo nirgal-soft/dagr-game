@@ -15,10 +15,11 @@ impl Drop for TerminalGuard {
     let _ = terminal::disable_raw_mode();
   }
 }
-mod area;
+mod areas;
 mod camera;
 mod dungeon_generator;
 mod game_state;
+mod generators;
 mod input;
 mod pathfinding;
 mod region_gen;
