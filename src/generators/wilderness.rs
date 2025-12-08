@@ -119,8 +119,8 @@ impl FeatureKey{
   fn to_feature(&self) -> Feature{
     match self.symbol{
       'T' => Feature::TREE,
-      'W' => Feature::WATER,
-      'R' => Feature::ROCK,
+      '~' => Feature::WATER,
+      'o' => Feature::ROCK,
       _ => Feature::ROCK,
     }
   }
