@@ -18,13 +18,16 @@ impl Drop for TerminalGuard {
 mod areas;
 mod camera;
 mod dungeon_generator;
+mod errors;
 mod game_state;
 mod generators;
 mod input;
+mod navigation;
 mod pathfinding;
 mod region_gen;
 mod renderer;
 mod ui;
+mod view_manager;
 mod visiblity;
 mod wilderness_generator;
 mod world_map;
@@ -55,10 +58,11 @@ async fn main(){
 async fn run() -> Result<()>{
   let pool = Arc::new(connection::establish_connection().await?);
   let world = Arc::new(Mutex::new(World::new()));
-  let registry = Arc::new(build_factor_registry(AppConfig{
-    pool: pool.clone(),
-    world_seed: 0
-  })?
+  let registry = Arc::new(
+    build_factor_registry(AppConfig{
+      pool: pool.clone(),
+      world_seed: 0
+    })?
   );
 
   let entity_manager = ems::entity_manager::EntityManager::new(
