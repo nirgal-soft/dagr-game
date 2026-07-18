@@ -59,12 +59,15 @@ async fn main(){
 }
 
 async fn run() -> Result<()>{
+  let world_seed = std::env::var("WORLD_SEED")
+    .unwrap_or_else(|_| "0".to_string())
+    .parse::<u64>()?;
   let pool = Arc::new(connection::establish_connection().await?);
   let world = Arc::new(Mutex::new(World::new()));
   let registry = Arc::new(
     build_factor_registry(AppConfig{
       pool: pool.clone(),
-      world_seed: 0
+      world_seed
     })?
   );
 

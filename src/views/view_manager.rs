@@ -475,7 +475,6 @@ impl ViewManager {
       LocationType::Wilderness => (
         EntityKind::Wilderness,
         json!({
-          "world_seed": seed,
           "x": hex_spatial.get_x(),
           "y": hex_spatial.get_y(),
           "parent_location_id": hex_id,
