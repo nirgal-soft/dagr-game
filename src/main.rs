@@ -39,6 +39,10 @@ use hecs::World;
 
 #[tokio::main]
 async fn main(){
+  // Load local development configuration before initializing services. Values
+  // already present in the process environment take precedence over `.env`.
+  let _ = dotenvy::dotenv();
+
   let _guard = match init_tracing(){
     Ok(guard) => guard,
     Err(e) => {

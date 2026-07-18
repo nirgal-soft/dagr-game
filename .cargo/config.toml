@@ -1,0 +1,3 @@
+[env]
+# Use the backend's committed SQLx query metadata during client builds.
+SQLX_OFFLINE = "true"
