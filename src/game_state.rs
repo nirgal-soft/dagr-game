@@ -1,8 +1,7 @@
 use anyhow::{Result, anyhow};
 use dagr_lib::components::world::{hex::Hex, spatial::Spatial};
-use dagr_lib::core::registry::EntityKind;
 use dagr_lib::ems::{component::Component, entity_manager::EntityManager};
-use serde_json::json;
+use dagr_lib::factories::world::{dungeon::DungeonSeed, hex::HexSeed};
 use tracing::info;
 
 use crate::camera::Camera;
@@ -102,14 +101,7 @@ impl GameState {
 
     let entity = self
       .entity_manager
-      .create_entity(
-        EntityKind::Hex,
-        json!({
-          "x": x,
-          "y": y,
-          "prev": prev,
-        }),
-      )
+      .create(HexSeed{x, y, prev})
       .await?;
 
     self.map.insert((x, y), entity);
@@ -129,15 +121,13 @@ impl GameState {
   pub async fn generate_dungeon(&mut self) -> Result<()> {
     let dungeon = self
       .entity_manager
-      .create_entity(
-        EntityKind::Dungeon,
-        json!({
-          "seed": 0,
-          "depth_levels": 1,
-          "x": 0,
-          "y": 0,
-        }),
-      )
+      .create(DungeonSeed{
+        seed: 0,
+        depth_levels: 1,
+        x: 0,
+        y: 0,
+        parent_location_id: None,
+      })
       .await?;
 
     let outcome = self.view_manager.transition(

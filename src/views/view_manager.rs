@@ -8,10 +8,9 @@ use dagr_lib::components::world::{
   spatial::Spatial,
   wilderness::Wilderness,
 };
-use dagr_lib::core::registry::EntityKind;
 use dagr_lib::ems::{component::Component, entity_manager::EntityManager};
+use dagr_lib::factories::world::{dungeon::DungeonSeed, wilderness::WildernessSeed};
 use hecs::Entity;
-use serde_json::json;
 use tracing::info;
 
 use crate::areas::{Area, LocationConfig, PointOfInterest, Pos};
@@ -471,29 +470,21 @@ impl ViewManager {
       ),
     );
 
-    let (kind, seed_data) = match location_type {
-      LocationType::Wilderness => (
-        EntityKind::Wilderness,
-        json!({
-          "x": hex_spatial.get_x(),
-          "y": hex_spatial.get_y(),
-          "parent_location_id": hex_id,
-        }),
-      ),
-      LocationType::Dungeon => (
-        EntityKind::Dungeon,
-        json!({
-          "seed": seed,
-          "depth_levels": 3,
-          "x": hex_spatial.get_x(),
-          "y": hex_spatial.get_y(),
-          "parent_location_id": hex_id,
-        }),
-      ),
+    match location_type {
+      LocationType::Wilderness => entity_manager.create(WildernessSeed{
+        x: hex_spatial.get_x(),
+        y: hex_spatial.get_y(),
+        parent_location_id: Some(hex_id),
+      }).await,
+      LocationType::Dungeon => entity_manager.create(DungeonSeed{
+        seed,
+        depth_levels: 3,
+        x: hex_spatial.get_x(),
+        y: hex_spatial.get_y(),
+        parent_location_id: Some(hex_id),
+      }).await,
       _ => unreachable!(),
-    };
-
-    entity_manager.create_entity(kind, seed_data).await
+    }
   }
 }
 
