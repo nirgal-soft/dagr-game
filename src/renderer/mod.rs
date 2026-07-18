@@ -1,8 +1,7 @@
 use std::io::Write;
 use anyhow::Result;
-use crossterm::{queue, cursor, style::{self, Stylize, Color}};
-use tracing::{debug, error, info};
-use crate::game_state::{ViewMode, GameState};
+use crossterm::style::Color;
+use crate::game_state::GameState;
 use crate::ui::{map::Map, stat_bar::StatBar, panel::Panel, popup::Popup};
 
 pub mod render_config;
@@ -24,16 +23,10 @@ impl Renderer{
   pub fn render(&self, stdout: &mut std::io::Stdout, game_state: &GameState) -> Result<()>{
     let map = Map::new(0, 0, self.width, self.map_height);
 
-    match game_state.view_mode{
-      ViewMode::HexMap => {
-        self.render_hexmap(stdout, &map, game_state)?;
-      }
-      ViewMode::Wilderness(_) => {
-        self.render_wilderness(stdout, &map, game_state)?;
-      }
-      ViewMode::Dungeon(_, _) => {
-        self.render_dungeon(stdout, &map, game_state)?;
-      }
+    if game_state.is_in_world(){
+      self.render_hexmap(stdout, &map, game_state)?;
+    }else{
+      self.render_location(stdout, &map, game_state)?;
     }
 
     if let Some(ref message) = game_state.popup_message{
@@ -71,7 +64,7 @@ impl Renderer{
     Ok(())
   }
 
-  fn render_wilderness(&self, stdout: &mut std::io::Stdout, map: &Map, game_state: &GameState) -> Result<()>{
+  fn render_location(&self, stdout: &mut std::io::Stdout, map: &Map, game_state: &GameState) -> Result<()>{
     map.draw(stdout, |x, y|{
       let world_x = x as i32 + game_state.camera.x;
       let world_y = y as i32 + game_state.camera.y;
@@ -80,21 +73,7 @@ impl Renderer{
         return Some(game_state.render_config.player_tile());
       }
 
-      game_state.get_wilderness_tile(world_x, world_y)
-    })?;
-    Ok(())
-  }
-
-  fn render_dungeon(&self, stdout: &mut std::io::Stdout, map: &Map, game_state: &GameState) -> Result<()>{
-    map.draw(stdout, |x, y|{
-      let world_x = x as i32 + game_state.camera.x;
-      let world_y = y as i32 + game_state.camera.y;
-
-      if world_x == game_state.player_x && world_y == game_state.player_y{
-        return Some(game_state.render_config.player_tile());
-      }
-
-      game_state.get_visible_dungeon_tile(world_x, world_y)
+      game_state.get_location_tile(world_x, world_y)
     })?;
 
     Ok(())
@@ -109,6 +88,7 @@ impl Renderer{
       format!("pos: ({}, {})", game_state.player_x, game_state.player_y),
       format!("cam: ({}, {})", game_state.camera.x, game_state.camera.y),
       format!("explored: {}", hexes_explored),
+      format!("view: {}", game_state.current_view_label()),
       "STR: 14".to_string(),
       "DEX: 16".to_string(),
       "CON: 12".to_string(),

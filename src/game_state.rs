@@ -1,130 +1,90 @@
-use std::collections::{HashMap, VecDeque};
-use std::collections::hash_map::Entry;
-use anyhow::{anyhow, Result};
-use hecs::Entity;
-use serde_json::json;
-use tracing::{debug, info};
-use dagr_lib::components::world::{
-  dungeon::Dungeon,
-  hex::Hex,
-  location::Location,
-  spatial::Spatial,
-  wilderness::Wilderness
-};
+use anyhow::{Result, anyhow};
+use dagr_lib::components::world::{hex::Hex, spatial::Spatial};
 use dagr_lib::core::registry::EntityKind;
-use dagr_lib::ems::{entity_manager::EntityManager, component::Component};
+use dagr_lib::ems::{component::Component, entity_manager::EntityManager};
+use serde_json::json;
+use tracing::info;
+
 use crate::camera::Camera;
-use crate::dungeon_generator::{DungeonArea, DungeonGenerator};
-use crate::pathfinding::{
-  Pos,
-  a_star::{
-    find_path,
-    find_path_to_nearest,
-  },
-};
-use crate::renderer::{Tile, RenderConfig};
-use crate::visiblity::VisibilityMap;
-use crate::wilderness_generator::{WildernessArea, WildernessGenerator};
+use crate::navigation::Navigator;
+use crate::renderer::{RenderConfig, Tile};
+use crate::views::{Transition, TransitionIntent, TransitionOutcome, ViewManager};
 use crate::world_map::WorldMap;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ViewMode{
-  HexMap,
-  Wilderness(Entity),
-  Dungeon(Entity, i32),
-}
-
-pub struct GameState{
+pub struct GameState {
   pub entity_manager: EntityManager,
   pub map: WorldMap,
   pub camera: Camera,
   pub player_x: i32,
   pub player_y: i32,
-  pub view_mode: ViewMode,
+  pub view_manager: ViewManager,
   pub render_config: RenderConfig,
-  pub visibility: VisibilityMap,
-  wilderness_cache: HashMap<Entity, WildernessArea>,
-  dungeon_cache: HashMap<(Entity, i32), DungeonArea>,
-  pub path_queue: VecDeque<Pos>,
+  navigator: Navigator,
   pub popup_message: Option<String>,
-  pub is_auto_exploring: bool,
 }
 
-impl GameState{
-  pub fn new(entity_manager: EntityManager, view_w: u16, view_h: u16) -> Self{
-    let mut state = Self{
+impl GameState {
+  pub fn new(entity_manager: EntityManager, view_w: u16, view_h: u16) -> Self {
+    let mut state = Self {
       entity_manager,
       map: WorldMap::new(),
       camera: Camera::new(view_w, view_h),
       player_x: 0,
       player_y: 0,
-      view_mode: ViewMode::HexMap,
+      view_manager: ViewManager::new(),
       render_config: RenderConfig::default(),
-      visibility: VisibilityMap::new(8),
-      wilderness_cache: HashMap::new(),
-      dungeon_cache: HashMap::new(),
-      path_queue: VecDeque::new(),
+      navigator: Navigator::new(),
       popup_message: None,
-      is_auto_exploring: false,
     };
     state.rebuild_map();
     state.attach_tiles();
     state
   }
 
-  pub fn update_visibility(&mut self){
-    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
-      if let Some(area) = self.dungeon_cache.get_mut(&(dungeon_entity, level)){
-        self.visibility.update(self.player_x, self.player_y, |x, y|{
-          area.is_opaque(x, y)
-        });
+  pub fn is_in_world(&self) -> bool {
+    self.view_manager.is_in_world()
+  }
 
-        let visible: Vec<_> = self.visibility.visible_tiles().collect();
-        area.mark_visible_as_seen(visible);
-      }
+  pub fn current_view_label(&self) -> String {
+    if self.view_manager.is_in_world() {
+      "World".to_string()
+    } else if let Some(level) = self.view_manager.current_level() {
+      format!("Dungeon level {level}")
+    } else {
+      "Wilderness".to_string()
     }
   }
 
-  pub fn get_visible_dungeon_tile(&self, x: i32, y: i32) -> Option<Tile>{
-    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
-      if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, level)){
-        let currently_visible = self.visibility.is_visible(x, y);
-        return dungeon.get_visible_tile(x, y, currently_visible, &self.render_config);
-      }
+  pub fn update_visibility(&mut self) {
+    if let Some(area) = self.view_manager.current_area_mut() {
+      area.update_visibility(self.player_x, self.player_y);
     }
-    None
   }
 
-  pub async fn move_player(&mut self, dx: i32, dy: i32) -> Result<()>{
-    info!("moving player by {}, {}", dx, dy);
+  pub fn get_location_tile(&self, x: i32, y: i32) -> Option<Tile> {
+    self
+      .view_manager
+      .current_area()
+      .and_then(|area| area.get_visible_tile(x, y, &self.render_config))
+  }
+
+  pub async fn move_player(&mut self, dx: i32, dy: i32) -> Result<()> {
     let new_x = self.player_x + dx;
     let new_y = self.player_y + dy;
-    let mut can_move = true;
 
-    match self.view_mode{
-      ViewMode::HexMap => {
-        info!("moving player in hexmap");
-        if self.map.get((new_x, new_y)).is_none(){
-          self.generate_hex_at(new_x, new_y).await?;
-        }
+    let can_move = if self.view_manager.is_in_world() {
+      if self.map.get((new_x, new_y)).is_none() {
+        self.generate_hex_at(new_x, new_y).await?;
       }
-      ViewMode::Wilderness(wilderness_entity) => {
-        if let Some(wilderness) = self.wilderness_cache.get(&wilderness_entity){
-          if !wilderness.contains(new_x, new_y){
-            can_move = false;
-          }
-        }
-      }
-      ViewMode::Dungeon(dungeon_entity, level) => {
-        if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, level)){
-          if !dungeon.is_walkable(new_x, new_y){
-            can_move = false;
-          }
-        }
-      }
-    }
+      true
+    } else {
+      self
+        .view_manager
+        .current_area()
+        .is_some_and(|area| area.is_walkable(new_x, new_y))
+    };
 
-    if can_move{
+    if can_move {
       self.player_x = new_x;
       self.player_y = new_y;
       self.camera.center_on(new_x, new_y);
@@ -133,560 +93,269 @@ impl GameState{
     Ok(())
   }
 
-  pub async fn enter_wilderness(&mut self) -> Result<()>{
-    let hex_entity = self.map.get((self.player_x, self.player_y))
-      .ok_or(anyhow!("No hex found at player position"))?;
-
-    let hex_location = self.entity_manager.get_component::<Location, _>(hex_entity)?;
-    let hex_spatial = self.entity_manager.get_component::<Spatial, _>(hex_entity)?;
-    let hex_location_id = hex_location.get().get_id();
-    let hex_seed = hex_location.get().get_seed().unwrap_or(0);
-    info!("hex location id: {}", hex_location_id);
-
-    let wilderness_entity = match self.entity_manager.find_child_entity::<Wilderness>(hex_location_id){
-      Some(entity) => {
-        info!("found wilderness entity");
-        entity
-      }
-      None => {
-        info!("no wilderness entity found");
-        self.entity_manager.create_entity(
-          EntityKind::Wilderness,
-          json!({
-            "x": hex_spatial.get().get_x(),
-            "y": hex_spatial.get().get_y(),
-            "parent_location_id": Some(hex_location_id)
-          })
-        ).await?
-      }
-    };
-
-    let _dungeon_entity = match self.entity_manager.find_child_entity::<Dungeon>(hex_location_id){
-      Some(entity) => {
-        info!("found dungeon entity");
-        entity
-      }
-      None => {
-        info!("no dungeon entity found");
-        self.entity_manager.create_entity(
-          EntityKind::Dungeon,
-          json!({
-            "seed": hex_seed,
-            "depth_levels": 3,
-            "x": hex_spatial.get().get_x(),
-            "y": hex_spatial.get().get_y(),
-            "parent_location_id": Some(hex_location_id)
-          })
-        ).await?
-      }
-    };
-
-    let spatial = self.entity_manager.get_component::<Spatial, _>(wilderness_entity)?;
-    let wilderness = self.entity_manager.get_component::<Wilderness, _>(wilderness_entity)?;
-    info!("wilderness entity: {:?}", wilderness_entity);
-    info!("wilderness component: {:?}", wilderness);
-
-    if let Entry::Vacant(e) = self.wilderness_cache.entry(wilderness_entity) {
-      info!("wilderness not cached, generating");
-      let seed = hex_location.get().get_seed().unwrap_or(0);
-      let spatial_data = spatial.get();
-      let generator = WildernessGenerator::new(seed as u64);
-      let mut area = generator.generate(spatial_data.get_width(), spatial_data.get_length())?;
-
-      let entrance_x = area.width / 2;
-      let entrance_y = area.height / 2;
-      area.set_dungeon_entrance(entrance_x, entrance_y);
-      info!("dungeon entrance at {},{}", entrance_x, entrance_y);
-
-      e.insert(area);
-    }
-
-    self.view_mode = ViewMode::Wilderness(wilderness_entity);
-
-    let wilderness = self.wilderness_cache.get(&wilderness_entity)
-      .ok_or_else(|| anyhow!("no wilderness found at hex location"))?;
-    self.player_x = wilderness.width / 2;
-    self.player_y = wilderness.height / 2;
-    self.camera.center_on(self.player_x, self.player_y);
-
-    Ok(())
-  }
-
-  pub fn exit_wilderness(&mut self) -> Result<()>{
-    match self.view_mode{
-      ViewMode::Wilderness(wilderness_entity) => {
-        let wilderness_location = self.entity_manager.get_component::<Location, _>(wilderness_entity)?;
-        let parent_location_id = wilderness_location.get().parent_location_id
-          .ok_or_else(|| anyhow!("no parent location found for wilderness"))?;
-        let hex_entity = self.entity_manager.find_entity_by_location_id::<Hex>(parent_location_id)
-          .ok_or_else(|| anyhow!("no hex found at parent location"))?;
-        let hex_spatial = self.entity_manager.get_component::<Spatial, _>(hex_entity)?;
-        let hex_spatial_data = hex_spatial.get();
-
-        self.player_x = hex_spatial_data.get_x();
-        self.player_y = hex_spatial_data.get_y();
-
-        self.view_mode = ViewMode::HexMap;
-        self.camera.center_on(self.player_x, self.player_y);
-        Ok(())
-      }
-      _ => {
-        Err(anyhow!("not currently in wilderness mode"))
-      }
-    }
-  }
-
-  pub fn get_wilderness_tile(&self, x: i32, y: i32) -> Option<Tile>{
-    if let ViewMode::Wilderness(wilderness_entity) = self.view_mode{
-      if let Some(wilderness) = self.wilderness_cache.get(&wilderness_entity){
-        if let Some(wtile) = wilderness.get(x, y){
-          return Some(wtile.tile)
-        }
-      }
-    }
-    None
-  }
-
-  pub fn get_dungeon_tile(&self, x: i32, y: i32) -> Option<Tile>{
-    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
-      if let Some(dungeon) = self.dungeon_cache.get(&(dungeon_entity, level)){
-        return dungeon.get_tile(x, y).cloned();
-      }
-    }
-    None
-  }
-
-  pub async fn generate_hex_at(&mut self, x: i32, y: i32) -> Result<()>{
-    info!("generating hex at {}, {}", x, y);
-    let prev = self.map.get((x-1, y))
+  pub async fn generate_hex_at(&mut self, x: i32, y: i32) -> Result<()> {
+    info!(x, y, "generating hex");
+    let prev = self
+      .map
+      .get((x - 1, y))
       .and_then(|entity| self.entity_manager.get_component::<Hex, _>(entity).ok());
 
-    info!("previous hex retrieved");
-    info!("prev hex: {:?}", prev);
-    let entity = self.entity_manager.create_entity(
-      EntityKind::Hex,
-      json!({
-        "x": x,
-        "y": y,
-        "prev": prev
-      })
-    ).await?;
-    info!("hex created");
+    let entity = self
+      .entity_manager
+      .create_entity(
+        EntityKind::Hex,
+        json!({
+          "x": x,
+          "y": y,
+          "prev": prev,
+        }),
+      )
+      .await?;
 
     self.map.insert((x, y), entity);
-    info!("hex inserted into map");
-
-    if let Ok(hex) = self.entity_manager.get_component::<Hex, _>(entity){
+    if let Ok(hex) = self.entity_manager.get_component::<Hex, _>(entity) {
       let tile = Tile::from_terrain_type(&hex.get());
-      let mut world = self.entity_manager.world.lock().unwrap();
-      world.insert_one(entity, tile).ok();
+      let mut world = self
+        .entity_manager
+        .world
+        .lock()
+        .map_err(|_| anyhow!("ECS world lock poisoned"))?;
+      world.insert_one(entity, tile)?;
     }
-    info!("hex tile inserted into world");
 
     Ok(())
   }
 
-  pub async fn generate_dungeon(&mut self) -> Result<()>{
-    info!("generating dungeon");
-    let dungeon = self.entity_manager.create_entity(
-      EntityKind::Dungeon,
-      json!({
-        "seed": 0,
-        "depth_levels": 1,
-        "x": 0,
-        "y": 0,
-      })
-    ).await?;
+  pub async fn generate_dungeon(&mut self) -> Result<()> {
+    let dungeon = self
+      .entity_manager
+      .create_entity(
+        EntityKind::Dungeon,
+        json!({
+          "seed": 0,
+          "depth_levels": 1,
+          "x": 0,
+          "y": 0,
+        }),
+      )
+      .await?;
 
-    info!("dungeon {:?} generated", dungeon);
-
-    self.enter_dungeon(dungeon).await?;
-
+    let outcome = self.view_manager.transition(
+      TransitionIntent::Enter(dungeon),
+      (self.player_x, self.player_y),
+      &self.entity_manager,
+    )?;
+    self.resolve_transition(outcome).await?;
     Ok(())
   }
 
-  pub fn get_current_hex(&self) -> Result<Hex>{
-    let hex_entity = self.entity_manager.find_entity_at::<Hex>(self.player_x, self.player_y);
-    match hex_entity{
-      Some(entity) => self.entity_manager.get_component::<Hex, _>(entity),
-      None => Err(anyhow!("unable to find current hex at player location")),
-    }
+  pub fn get_current_hex(&self) -> Result<Hex> {
+    let entity = self
+      .entity_manager
+      .find_entity_at::<Hex>(self.player_x, self.player_y)
+      .ok_or_else(|| anyhow!("unable to find current hex at player location"))?;
+    self.entity_manager.get_component::<Hex, _>(entity)
   }
 
-  pub fn rebuild_map(&mut self){
+  pub fn rebuild_map(&mut self) {
     self.map.clear();
-    self.entity_manager.for_each::<(&Hex, &Spatial), _>(|entity, (_hex, spatial) |{
-      self.map.insert((spatial.get().x, spatial.get().y), entity);
-    });
+    let _ = self
+      .entity_manager
+      .for_each::<(&Hex, &Spatial), _>(|entity, (_hex, spatial)| {
+        let spatial = spatial.get();
+        self.map.insert((spatial.get_x(), spatial.get_y()), entity);
+      });
   }
 
-  pub fn attach_tiles(&mut self){
+  pub fn attach_tiles(&mut self) {
     let mut tiles = Vec::new();
-    self.entity_manager.for_each::<&Hex, _>(|entity, hex|{
+    let _ = self.entity_manager.for_each::<&Hex, _>(|entity, hex| {
       tiles.push((entity, Tile::from_terrain_type(&hex.get())));
     });
 
-    let mut world = self.entity_manager.world.lock().unwrap();
-    for (entity, tile) in tiles{
-      world.insert_one(entity, tile).ok();
-    }
-  }
-
-  pub async fn ascend(&mut self) -> Result<()>{
-    match self.view_mode{
-      ViewMode::HexMap => {
-        info!("already at top level");
-      },
-      ViewMode::Wilderness(_wilderness_entity) => {
-        self.exit_wilderness()?;
-      },
-      ViewMode::Dungeon(dungeon_entity, current_level) => {
-        let dungeon_area = self.dungeon_cache.get(&(dungeon_entity, current_level))
-          .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
-
-        if !dungeon_area.is_stairs_up(self.player_x, self.player_y){
-          self.navigate_to_stairs_up();
-          return Ok(());
-        }
-
-        if current_level == 1{
-          let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
-          let parent_hex_id = dungeon_location.get().get_parent_location_id();
-
-          if let Some(hex_id) = parent_hex_id{
-            if let Some(wilderness_entity) = self.entity_manager.find_child_entity::<Wilderness>(hex_id){
-              if let Some(wilderness) = self.wilderness_cache.get(&wilderness_entity){
-                if let Some((entrance_x, entrance_y)) = wilderness.dungeon_entrance{
-                  self.player_x = entrance_x;
-                  self.player_y = entrance_y;
-                }
-              }
-              self.view_mode = ViewMode::Wilderness(wilderness_entity);
-              self.camera.center_on(self.player_x, self.player_y);
-              return Ok(())
-            }
-          }
-
-          self.exit_dungeon()?;
-        }else{
-          let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
-          let seed = dungeon_location.get().get_seed().unwrap_or(0);
-
-          let new_level = current_level - 1;
-          info!("ascending to dungeon level {}", new_level);
-
-          if !self.dungeon_cache.contains_key(&(dungeon_entity, new_level)){
-            let generator = DungeonGenerator::new(seed as u64);
-            let new_area = generator.generate(dungeon_entity, &self.entity_manager, new_level)?;
-            self.dungeon_cache.insert((dungeon_entity, new_level), new_area);
-          }
-
-          let new_area = self.dungeon_cache.get(&(dungeon_entity, new_level))
-            .ok_or_else(|| anyhow!("failed to get new level"))?;
-
-          if let Some((down_x, down_y)) = new_area.stairs_down{
-            self.player_x = down_x;
-            self.player_y = down_y
-          }
-
-          self.view_mode = ViewMode::Dungeon(dungeon_entity, new_level);
-          self.camera.center_on(self.player_x, self.player_y);
-          self.visibility.clear()
-        }
-      },
-    }
-
-    Ok(())
-  }
-
-  pub async fn descend(&mut self) -> Result<()>{
-    match self.view_mode{
-      ViewMode::HexMap => {
-        self.enter_wilderness().await?;
-      },
-      ViewMode::Wilderness(wilderness_entity) => {
-        let wilderness = self.wilderness_cache.get(&wilderness_entity)
-          .ok_or_else(|| anyhow!("no wilderness found at hex location"))?;
-
-        if !wilderness.is_dungeon_entrance(self.player_x, self.player_y){
-          info!("not standing on dungeon entrance");
-          return Ok(());
-        }
-
-        let wilderness_location = self.entity_manager.get_component::<Location, _>(wilderness_entity)?;
-        let parent_hex_id = wilderness_location.get().get_parent_location_id()
-          .ok_or_else(|| anyhow!("no parent location found for wilderness"))?;
-
-        if let Some(dungeon_entity) = self.entity_manager.find_child_entity::<Dungeon>(parent_hex_id){
-          self.enter_dungeon(dungeon_entity).await?;
-        }else{
-          info!("no dungeon found at parent hex location");
-        }
-      },
-      ViewMode::Dungeon(dungeon_entity, current_level) => {
-        let current_level = self.dungeon_cache
-          .iter()
-          .find(|((e, _), _)| *e == dungeon_entity)
-          .and_then(|((_, _), area)| Some(area.current_level))
-          .unwrap_or(1);
-
-        let dungeon_area = self.dungeon_cache.get(&(dungeon_entity, current_level))
-          .ok_or_else(|| anyhow!("no dungeon found in cache"))?;
-
-        if !dungeon_area.is_stairs_down(self.player_x, self.player_y){
-          self.navigate_to_stairs_down();
-          return Ok(())
-        }
-
-        let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
-        let seed = dungeon_location.get().get_seed().unwrap_or(0);
-
-        let new_level = current_level + 1;
-        info!("descending to dungeon level {}", new_level);
-
-        if !self.dungeon_cache.contains_key(&(dungeon_entity, new_level)){
-          let generator = DungeonGenerator::new(seed as u64);
-          let new_area = generator.generate(dungeon_entity, &self.entity_manager, new_level)?;
-          self.dungeon_cache.insert((dungeon_entity, new_level), new_area);
-        }
-
-        let new_area = self.dungeon_cache.get(&(dungeon_entity, new_level))
-          .ok_or_else(|| anyhow!("failed to get new level"))?;
-
-        if let Some((up_x, up_y)) = new_area.stairs_up{
-          self.player_x = up_x;
-          self.player_y = up_y;
-        }
-
-        self.view_mode = ViewMode::Dungeon(dungeon_entity, new_level);
-        self.camera.center_on(self.player_x, self.player_y);
-        self.visibility.clear();
-      },
-    }
-
-    Ok(())
-  }
-
-  pub async fn enter_dungeon(&mut self, dungeon_entity: Entity) -> Result<()>{
-    info!("entering dungeon");
-    let dungeon_generator = DungeonGenerator::new(0);
-    let level = 1;
-
-    if !self.dungeon_cache.contains_key(&(dungeon_entity, level)){
-      info!("dungeon level {} not cached, generating area", level);
-      let dungeon_area = dungeon_generator.generate(dungeon_entity, &self.entity_manager, level)?;
-      debug!("dungeon area: {:?}", dungeon_area);
-      self.dungeon_cache.insert((dungeon_entity, level), dungeon_area);
-    }
-
-    self.view_mode = ViewMode::Dungeon(dungeon_entity, level);
-
-    let dungeon = self.dungeon_cache.get(&(dungeon_entity, level))
-      .ok_or_else(|| anyhow!("no dungeon found at hex location"))?;
-
-    if let Some((entrance_x, entrance_y)) = dungeon.entrance{
-      self.player_x = entrance_x;
-      self.player_y = entrance_y;
-    }
-    self.camera.center_on(self.player_x, self.player_y);
-    self.visibility.clear();
-
-    Ok(())
-  }
-
-  pub fn exit_dungeon(&mut self) -> Result<()>{
-    match self.view_mode{
-      ViewMode::Dungeon(dungeon_entity, _level) => {
-        let dungeon_location = self.entity_manager.get_component::<Location, _>(dungeon_entity)?;
-        let parent_location_id = dungeon_location.get().parent_location_id;
-
-        if let Some(parent_id) = parent_location_id{
-          let hex_entity = self.entity_manager.find_entity_by_location_id::<Hex>(parent_id)
-            .ok_or_else(|| anyhow!("no hex found at parent location"))?;
-          let hex_spatial = self.entity_manager.get_component::<Spatial, _>(hex_entity)?;
-          let hex_spatial_data = hex_spatial.get();
-
-          self.player_x = hex_spatial_data.get_x();
-          self.player_y = hex_spatial_data.get_y();
-        }else{
-          self.player_x = 0;
-          self.player_y = 0;
-        }
-
-        self.view_mode = ViewMode::HexMap;
-        self.camera.center_on(self.player_x, self.player_y);
-        Ok(())
+    if let Ok(mut world) = self.entity_manager.world.lock() {
+      for (entity, tile) in tiles {
+        let _ = world.insert_one(entity, tile);
       }
-      _ => Err(anyhow!("not currently in dungeon mode")),
     }
   }
 
-  pub fn dismiss_popup(&mut self){
+  pub async fn ascend(&mut self) -> Result<()> {
+    let outcome = self.view_manager.transition(
+      TransitionIntent::Ascend,
+      (self.player_x, self.player_y),
+      &self.entity_manager,
+    )?;
+    match self.resolve_transition(outcome).await? {
+      TransitionOutcome::NotAtExit => self.navigate_to_stairs_up(),
+      TransitionOutcome::AtWorldLevel => self.show_popup("Already at world level"),
+      TransitionOutcome::Unsupported => self.show_popup("Cannot ascend from here"),
+      _ => {}
+    }
+    Ok(())
+  }
+
+  pub async fn descend(&mut self) -> Result<()> {
+    let outcome = if self.view_manager.is_in_world() {
+      let hex = self
+        .map
+        .get((self.player_x, self.player_y))
+        .ok_or_else(|| anyhow!("no hex found at player position"))?;
+      self.view_manager.transition(
+        TransitionIntent::Enter(hex),
+        (self.player_x, self.player_y),
+        &self.entity_manager,
+      )?
+    } else {
+      self.view_manager.transition(
+        TransitionIntent::Descend,
+        (self.player_x, self.player_y),
+        &self.entity_manager,
+      )?
+    };
+
+    match self.resolve_transition(outcome).await? {
+      TransitionOutcome::NotAtExit => self.navigate_to_stairs_down(),
+      TransitionOutcome::NoEntry => self.show_popup("Nothing lies below this level"),
+      TransitionOutcome::Unsupported => self.show_popup("Cannot descend from here"),
+      _ => {}
+    }
+    Ok(())
+  }
+
+  async fn resolve_transition(
+    &mut self,
+    mut outcome: TransitionOutcome,
+  ) -> Result<TransitionOutcome> {
+    loop {
+      match outcome {
+        TransitionOutcome::NeedsAsync(work) => {
+          outcome = self
+            .view_manager
+            .execute_async(work, &self.entity_manager)
+            .await?;
+        }
+        TransitionOutcome::Ok(transition) => {
+          self.apply_transition(&transition);
+          return Ok(TransitionOutcome::Ok(transition));
+        }
+        other => return Ok(other),
+      }
+    }
+  }
+
+  fn apply_transition(&mut self, transition: &Transition) {
+    self.cancel_navigation();
+    self.player_x = transition.player_pos.0;
+    self.player_y = transition.player_pos.1;
+    self.camera.center_on(self.player_x, self.player_y);
+
+    if transition.clear_fov {
+      if let Some(area) = self.view_manager.current_area_mut() {
+        area.clear_visibility();
+      }
+    }
+    self.update_visibility();
+  }
+
+  pub fn dismiss_popup(&mut self) {
     self.popup_message = None;
   }
 
-  pub fn show_popup(&mut self, message: impl Into<String>){
+  pub fn show_popup(&mut self, message: impl Into<String>) {
     self.popup_message = Some(message.into());
   }
 
-  pub fn is_auto_navigating(&self) -> bool{
-    !self.path_queue.is_empty()
+  pub fn is_auto_navigating(&self) -> bool {
+    self.navigator.is_navigating()
   }
 
-  pub fn cancel_navigation(&mut self){
-    self.path_queue.clear();
-    self.is_auto_exploring = false;
+  pub fn cancel_navigation(&mut self) {
+    self.navigator.cancel();
   }
 
-  pub async fn step_navigation(&mut self) -> Result<bool>{
-    if let Some((next_x, next_y)) = self.path_queue.pop_front(){
+  pub async fn step_navigation(&mut self) -> Result<bool> {
+    if let Some((next_x, next_y)) = self.navigator.next_step() {
       let dx = next_x - self.player_x;
       let dy = next_y - self.player_y;
       self.move_player(dx, dy).await?;
       self.update_visibility();
 
-      if self.is_auto_exploring && self.path_queue.is_empty(){
+      if self.navigator.is_exploring() && self.navigator.queue_is_empty() {
         self.find_next_exploration_target();
       }
-
       Ok(true)
-    }else{
+    } else {
       Ok(false)
     }
   }
 
-  pub fn start_exploring(&mut self){
-    if let ViewMode::Dungeon(_, _) = self.view_mode{
-      self.is_auto_exploring = true;
-      self.find_next_exploration_target();
-    }else{
-      self.show_popup("Not in a dungeon");
-    }
-  }
-
-  fn find_next_exploration_target(&mut self){
-    if !self.is_auto_exploring{
+  pub fn start_exploring(&mut self) {
+    if !self
+      .view_manager
+      .current_area()
+      .is_some_and(|area| area.has_fov())
+    {
+      self.show_popup("Auto-explore is only available in areas with limited visibility");
       return;
     }
 
-    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
-      if let Some(area) = self.dungeon_cache.get(&(dungeon_entity, level)){
-        let frontiers = area.find_exploration_frontiers();
+    self.navigator.start_exploring();
+    self.find_next_exploration_target();
+  }
 
-        //debug logging
-        info!("auto-explore: found {} frontiers", frontiers.len());
-        info!("player at ({}, {}), is_seen: {}, is_walkable: {}",
-          self.player_x, self.player_y,
-          area.is_seen(self.player_x, self.player_y),
-          area.is_walkable(self.player_x, self.player_y)
-        );
+  fn find_next_exploration_target(&mut self) {
+    let start = (self.player_x, self.player_y);
+    let result = match self.view_manager.current_area() {
+      Some(area) => self.navigator.find_exploration_target(start, area),
+      None => return,
+    };
 
-        
-        if frontiers.is_empty(){
-          self.is_auto_exploring = false;
-          self.show_popup("Nowhere left to explore");
-          return;
-        }
-
-        info!("total tiles seen: {}", area.seen_count());
-        let directions = [
-          (-1, -1), (0, -1), (1, -1),
-          (-1,  0),          (1,  0),
-          (-1,  1), (0,  1), (1,  1),
-        ];
-        for (dx, dy) in directions {
-          let nx = self.player_x + dx;
-          let ny = self.player_y + dy;
-          info!("  neighbor ({}, {}): seen={}, walkable={}, both={}", 
-            nx, ny,
-            area.is_seen(nx, ny),
-            area.is_walkable(nx, ny),
-            area.is_seen_and_walkable(nx, ny));
-        }
-
-        let start = (self.player_x, self.player_y);
-        let result = find_path_to_nearest(start, frontiers.clone(), |x, y|{
-          area.is_seen_and_walkable(x, y)
-        });
-
-        match result{
-          Some((path, goal)) => {
-            info!("found path to {:?} with {} steps", goal, path.len());
-            self.path_queue = path.into_iter().collect();
-          }
-          None => {
-            info!("pathfinding failed. first few frontiers: {:?}", &frontiers[..frontiers.len().min(5)]);
-            self.is_auto_exploring = false;
-            self.show_popup("No path to explore");
-          }
-        }
-      }
+    if let Err(error) = result {
+      self.show_popup(match error.to_string().as_str() {
+        "area fully explored" => "Nowhere left to explore".to_string(),
+        _ => format!("Auto-explore stopped: {error}"),
+      });
     }
   }
 
-  pub fn navigate_to_stairs_up(&mut self){
-    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
-      if let Some(area) = self.dungeon_cache.get(&(dungeon_entity, level)){
-        if area.is_stairs_up(self.player_x, self.player_y){
-          self.show_popup("Already on stairs up - press `<` to ascend");
-          return;
-        }
-
-        let goals = area.find_seen_stairs_up();
-        if goals.is_empty(){
-          self.show_popup("No stairs up visible");
-          return;
-        }
-
-        let start = (self.player_x, self.player_y);
-        let result = find_path_to_nearest(start, goals, |x, y|{
-          area.is_seen_and_walkable(x, y)
-        });
-
-        match result{
-          Some((path, _)) => {
-            self.path_queue = path.into_iter().collect();
-          }
-          None => {
-            self.show_popup("No path to stairs up");
-          }
-        }
-      }
-    }else{
-      self.show_popup("Not in a dungeon");
-    }
+  pub fn navigate_to_stairs_up(&mut self) {
+    self.navigate_to_stairs(true);
   }
 
-  pub fn navigate_to_stairs_down(&mut self){
-    if let ViewMode::Dungeon(dungeon_entity, level) = self.view_mode{
-      if let Some(area) = self.dungeon_cache.get(&(dungeon_entity, level)){
-        if area.is_stairs_down(self.player_x, self.player_y){
-          self.show_popup("Already on stairs down - press `>` to descend");
-          return;
-        }
+  pub fn navigate_to_stairs_down(&mut self) {
+    self.navigate_to_stairs(false);
+  }
 
-        let goals = area.find_seen_stairs_down();
-        if goals.is_empty(){
-          self.show_popup("No stairs down visible");
-          return;
-        }
+  fn navigate_to_stairs(&mut self, going_up: bool) {
+    let start = (self.player_x, self.player_y);
+    let Some(area) = self.view_manager.current_area() else {
+      self.show_popup("Not inside a location");
+      return;
+    };
 
-        let start = (self.player_x, self.player_y);
-        let result = find_path_to_nearest(start, goals, |x, y|{
-          area.is_seen_and_walkable(x, y)
-        });
+    let already_there = if going_up {
+      area.is_stairs_up(start.0, start.1)
+    } else {
+      area.is_stairs_down(start.0, start.1)
+    };
+    if already_there {
+      self.show_popup(if going_up {
+        "Already on stairs up - press `<` to ascend"
+      } else {
+        "Already on stairs down - press `>` to descend"
+      });
+      return;
+    }
 
-        match result{
-          Some((path, _)) => {
-            self.path_queue = path.into_iter().collect();
-          }
-          None => {
-            self.show_popup("No path to stairs down");
-          }
-        }
-      }
-    }else{
-      self.show_popup("Not in a dungeon");
+    let goals = if going_up {
+      area.find_seen_stairs_up()
+    } else {
+      area.find_seen_stairs_down()
+    };
+
+    if let Err(error) = self.navigator.navigate_to_nearest(start, goals, area) {
+      self.show_popup(format!("Cannot reach stairs: {error}"));
     }
   }
 }

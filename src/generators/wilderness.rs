@@ -1,23 +1,40 @@
-use std::collections::HashMap;
 use anyhow::Result;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
+use std::collections::HashMap;
 
 use crate::areas::{Area, Feature};
 
-pub struct WildernessGenerator{
+pub struct WildernessGenerator {
   pub seed: u64,
 }
 
-impl WildernessGenerator{
-  pub fn new(seed: u64) -> Self{
-    Self{
-      seed,
-    }
+impl WildernessGenerator {
+  pub fn new(seed: u64) -> Self {
+    Self { seed }
   }
 
-  pub fn generate(&self, width: i32, height: i32) -> Result<Area>{
+  pub fn generate(&self, width: i32, height: i32) -> Result<Area> {
     let mut rng = StdRng::seed_from_u64(self.seed);
     let mut area = Area::wilderness(width, height);
+
+    for y in 0..height {
+      for x in 0..width {
+        if let Some(feature) = self.generate_feature(&mut rng, x, y, width, height) {
+          area.set_feature(x, y, feature);
+        }
+      }
+    }
+
+    self.smooth_features(&mut area, width, height);
+
+    // Always leave a usable arrival zone in the center of the wilderness.
+    let center = (width / 2, height / 2);
+    for dy in -1..=1 {
+      for dx in -1..=1 {
+        area.remove_feature(center.0 + dx, center.1 + dy);
+      }
+    }
+    area.set_entrance(center.0, center.1);
 
     Ok(area)
   }
@@ -29,12 +46,12 @@ impl WildernessGenerator{
     y: i32,
     width: i32,
     height: i32,
-  ) -> Option<Feature>{
+  ) -> Option<Feature> {
     let roll: f32 = rng.random();
-    let edge_dist = x.min(y).min(width-x-1).min(height-y-1);
-    let edge_factor = if edge_dist < 3 {0.2} else {0.0};
+    let edge_dist = x.min(y).min(width - x - 1).min(height - y - 1);
+    let edge_factor = if edge_dist < 3 { 0.2 } else { 0.0 };
 
-    match roll{
+    match roll {
       r if r < 0.15 + edge_factor => Some(Feature::TREE),
       r if r < 0.25 => Some(Feature::WATER),
       r if r < 0.35 + edge_factor => Some(Feature::ROCK),
@@ -42,25 +59,27 @@ impl WildernessGenerator{
     }
   }
 
-  fn smooth_features(&self, area: &mut Area, width: i32, height: i32){
+  fn smooth_features(&self, area: &mut Area, width: i32, height: i32) {
     let mut changes: Vec<(i32, i32, Option<Feature>)> = Vec::new();
 
-    for y in 0..height{
-      for x in 0..width{
+    for y in 0..height {
+      for x in 0..width {
         let neighbors = self.count_neighbor_features(area, x, y, width, height);
 
-        if let Some((feature, count)) = neighbors.iter().max_by_key(|(_, c)| *c){
-          if *count >= 5{
+        if let Some((feature, count)) = neighbors.iter().max_by_key(|(_, c)| *c) {
+          if *count >= 5 {
             changes.push((x, y, Some(*feature)));
           }
         }
       }
     }
 
-    for (x, y, feature) in changes{
-      match feature{
+    for (x, y, feature) in changes {
+      match feature {
         Some(f) => area.set_feature(x, y, f),
-        None => {area.remove_feature(x, y);}
+        None => {
+          area.remove_feature(x, y);
+        }
       }
     }
   }
@@ -72,20 +91,20 @@ impl WildernessGenerator{
     y: i32,
     width: i32,
     height: i32,
-  ) -> Vec<(Feature, usize)>{
+  ) -> Vec<(Feature, usize)> {
     let mut counts: HashMap<FeatureKey, usize> = HashMap::new();
 
-    for dy in -1..=1{
-      for dx in -1..=1{
-        if dx == 0 && dy == 0{
+    for dy in -1..=1 {
+      for dx in -1..=1 {
+        if dx == 0 && dy == 0 {
           continue;
         }
 
         let nx = x + dx;
         let ny = y + dy;
 
-        if nx >= 0 && nx < width && ny >= 0 && ny < height{
-          if let Some(feature) = area.get_feature(nx, ny){
+        if nx >= 0 && nx < width && ny >= 0 && ny < height {
+          if let Some(feature) = area.get_feature(nx, ny) {
             let key = FeatureKey::from(*feature);
             *counts.entry(key).or_insert(0) += 1;
           }
@@ -95,33 +114,53 @@ impl WildernessGenerator{
 
     counts
       .into_iter()
-      .map(|(k, c)| (k.to_feature(), c))
+      .map(|(k, c)| (k.into_feature(), c))
       .collect()
-  }
-
-  pub fn set_dungeon_entrance(&self, area: &mut Area, x: i32, y: i32){
-    area.set_stairs_down(x, y);
   }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct FeatureKey{
+struct FeatureKey {
   symbol: char,
 }
 
-impl FeatureKey{
-  fn from(feature: Feature) -> Self{
-    Self{
+impl FeatureKey {
+  fn from(feature: Feature) -> Self {
+    Self {
       symbol: feature.tile.symbol,
     }
   }
 
-  fn to_feature(&self) -> Feature{
-    match self.symbol{
+  fn into_feature(self) -> Feature {
+    match self.symbol {
       'T' => Feature::TREE,
       '~' => Feature::WATER,
       'o' => Feature::ROCK,
       _ => Feature::ROCK,
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn generation_is_deterministic_and_keeps_the_center_open() {
+    let first = WildernessGenerator::new(1234).generate(20, 20).unwrap();
+    let second = WildernessGenerator::new(1234).generate(20, 20).unwrap();
+
+    for y in 0..20 {
+      for x in 0..20 {
+        assert_eq!(first.get_tile(x, y), second.get_tile(x, y));
+      }
+    }
+
+    assert_eq!(first.entrance, Some((10, 10)));
+    for dy in -1..=1 {
+      for dx in -1..=1 {
+        assert!(first.is_walkable(10 + dx, 10 + dy));
+      }
     }
   }
 }

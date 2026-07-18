@@ -27,6 +27,10 @@ pub fn draw_box(
   h: u16,
   style: BorderStyle,
 ) -> Result<()>{
+  if w < 2 || h < 2{
+    return Ok(());
+  }
+
   //top
   queue!(stdout, cursor::MoveTo(x, y))?;
   write!(stdout, "{}", style.top_left)?;

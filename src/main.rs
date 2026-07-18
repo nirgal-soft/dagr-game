@@ -1,4 +1,4 @@
-use std::io::{Write, self};
+use std::io::{self};
 use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use crossterm::{execute, cursor, terminal};
@@ -17,7 +17,6 @@ impl Drop for TerminalGuard {
 }
 mod areas;
 mod camera;
-mod dungeon_generator;
 mod errors;
 mod game_state;
 mod generators;
@@ -26,10 +25,10 @@ mod navigation;
 mod pathfinding;
 mod region_gen;
 mod renderer;
+mod seed;
 mod ui;
-mod view_manager;
+mod views;
 mod visiblity;
-mod wilderness_generator;
 mod world_map;
 use input::{Action, InputManager};
 

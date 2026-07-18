@@ -43,10 +43,11 @@ impl Tile{
 
   pub fn from_terrain_type(hex_data: &HexData) -> Self{
     match hex_data.get_terrain(){
-      Terrain::Mountains => Tile::new('^', Color::White).with_bg(Color::DarkGrey),
-      Terrain::Hills => Tile::new('n', Color::Yellow).with_bg(Color::Rgb{r: 60, g: 50, b: 30}),
-      Terrain::Plains => Tile::new('~', Color::Green).with_bg(Color::Rgb{r: 20, g: 60, b: 20}),
-      Terrain::Swamp => Tile::new('"', Color::DarkYellow).with_bg(Color::Rgb{r: 30, g: 50, b: 30}),
+      Ok(Terrain::Mountains) => Tile::new('^', Color::White).with_bg(Color::DarkGrey),
+      Ok(Terrain::Hills) => Tile::new('n', Color::Yellow).with_bg(Color::Rgb{r: 60, g: 50, b: 30}),
+      Ok(Terrain::Plains) => Tile::new('~', Color::Green).with_bg(Color::Rgb{r: 20, g: 60, b: 20}),
+      Ok(Terrain::Swamp) => Tile::new('"', Color::DarkYellow).with_bg(Color::Rgb{r: 30, g: 50, b: 30}),
+      Err(_) => Tile::new('?', Color::Magenta),
     }
   }
 }

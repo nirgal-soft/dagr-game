@@ -1,7 +1,9 @@
+use dagr_lib::components::world::location::LocationType;
+use dagr_lib::ids::LocationId;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum NavigationError{
+pub enum NavigationError {
   #[error("no target visible")]
   NoGoalsVisible,
   #[error("no path found")]
@@ -13,31 +15,17 @@ pub enum NavigationError{
 }
 
 #[derive(Debug, Error)]
-pub enum ViewError{
-  #[error("not in wildenress")]
-  NotInWilderness,
-  #[error("not in dungeon")]
-  NotInDungeon,
-  #[error("no parent locaiton found")]
+pub enum ViewError {
+  #[error("no current location")]
+  NoCurrentLocation,
+  #[error("no parent location found")]
   NoParentLocation,
-  #[error("no hex found at location")]
-  HexNotFound,
-  #[error("no dungeon found at location")]
-  DungeonNotFound,
-  #[error("no wilderness found at location")]
-  WildernessNotFound,
+  #[error("location not found: {0}")]
+  LocationNotFound(LocationId),
   #[error("area not in cache")]
-  AreaNotInCache,
-  #[error("failed to generate area: {0}")]
+  AreaNotCached,
+  #[error("unsupported location type: {0:?}")]
+  UnsupportedLocationType(LocationType),
+  #[error("generation failed: {0}")]
   GenerationFailed(String),
-}
-
-#[derive(Debug, Error)]
-pub enum GameError{
-  #[error("no hex at player position")]
-  NoHexAtPosition,
-  #[error("navigation error: {0}")]
-  Navigation(#[from] NavigationError),
-  #[error("view error: {0}")]
-  View(#[from] ViewError),
 }

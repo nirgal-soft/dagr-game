@@ -30,6 +30,10 @@ impl Map{
   where 
     F: FnMut(u16, u16) -> Option<Tile>
   {
+    if self.w < 2 || self.h < 2{
+      return Ok(());
+    }
+
     draw_box(
       stdout,
       self.x,

@@ -28,12 +28,12 @@ impl Feature{
   pub const TREE: Self = Self::new('T', Color::DarkGreen, false, true);
   pub const ROCK: Self = Self::new('o', Color::Grey, false, true);
   pub const WATER: Self = Self::new('~', Color::Blue, false, false);
-  pub const STAIRS_UP: Self = Self::new('<', Color::Yellow, false, false)
+  pub const STAIRS_UP: Self = Self::new('<', Color::Yellow, true, false)
     .with_bg(Color::Rgb{r: 50, g: 40, b: 20});
-  pub const STAIRS_DOWN: Self = Self::new('>', Color::Yellow, false, false)
+  pub const STAIRS_DOWN: Self = Self::new('>', Color::Yellow, true, false)
     .with_bg(Color::Rgb{r: 50, g: 40, b: 20});
   pub const DOOR_CLOSED: Self = Self::new('+', Color::White, false, true);
-  pub const DOOR_OPEN: Self = Self::new('/', Color::White, false, false);
+  pub const DOOR_OPEN: Self = Self::new('/', Color::White, true, false);
 
   pub fn is_stairs_up(&self) -> bool{
     self.tile.symbol == '<'
