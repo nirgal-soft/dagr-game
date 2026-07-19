@@ -90,6 +90,18 @@ impl ViewManager {
       TransitionIntent::CrossWildernessBoundary { target } => {
         self.cross_wilderness_boundary(target, entity_manager)
       }
+      TransitionIntent::EnterWildernessArea {
+        parent_entity,
+        area_x,
+        area_y,
+        crossing,
+      } => self.enter_wilderness_area(
+        parent_entity,
+        area_x,
+        area_y,
+        crossing,
+        entity_manager,
+      ),
     }
   }
 
@@ -361,13 +373,26 @@ impl ViewManager {
       .ok_or(ViewError::LocationNotFound(parent_id))?;
     let target_x = current_spatial.get_x() + area_dx;
     let target_y = current_spatial.get_y() + area_dy;
+    let crossing = WildernessCrossing { area_dx, area_dy, attempted_tile };
     if !self.wilderness_layout.contains(target_x, target_y) {
-      return Ok(TransitionOutcome::WildernessBoundary {
-        area_x: target_x,
-        area_y: target_y,
+      let (world_dx, target_area_x) = wrap_area_axis(
+        target_x,
+        self.wilderness_layout.min_x(),
+        self.wilderness_layout.max_x(),
+      );
+      let (world_dy, target_area_y) = wrap_area_axis(
+        target_y,
+        self.wilderness_layout.min_y(),
+        self.wilderness_layout.max_y(),
+      );
+      return Ok(TransitionOutcome::WorldBoundary {
+        world_dx,
+        world_dy,
+        target_area_x,
+        target_area_y,
+        crossing,
       });
     }
-    let crossing = WildernessCrossing { area_dx, area_dy, attempted_tile };
     let area_key = wilderness_area_key(target_x, target_y);
 
     if let Some(target) = entity_manager.find_wilderness_area(parent_id, &area_key) {
@@ -380,6 +405,32 @@ impl ViewManager {
       area_y: target_y,
       width: current_spatial.get_width(),
       length: current_spatial.get_length(),
+      crossing,
+    }))
+  }
+
+  fn enter_wilderness_area(
+    &mut self,
+    parent_entity: Entity,
+    area_x: i32,
+    area_y: i32,
+    crossing: WildernessCrossing,
+    entity_manager: &EntityManager,
+  ) -> Result<TransitionOutcome> {
+    let parent_id = entity_manager
+      .get_component::<Location, _>(parent_entity)?
+      .get()
+      .get_id()?;
+    let area_key = wilderness_area_key(area_x, area_y);
+    if let Some(entity) = entity_manager.find_wilderness_area(parent_id, &area_key) {
+      return self.enter_wilderness_from_boundary(entity, crossing, entity_manager);
+    }
+    Ok(TransitionOutcome::NeedsAsync(AsyncWork::CreateWildernessArea {
+      parent_entity,
+      area_x,
+      area_y,
+      width: self.wilderness_layout.area_width,
+      length: self.wilderness_layout.area_height,
       crossing,
     }))
   }
@@ -618,6 +669,16 @@ impl ViewManager {
   }
 }
 
+fn wrap_area_axis(value: i32, minimum: i32, maximum: i32) -> (i32, i32) {
+  if value < minimum {
+    (-1, maximum)
+  } else if value > maximum {
+    (1, minimum)
+  } else {
+    (0, value)
+  }
+}
+
 fn wilderness_area_key(x: i32, y: i32) -> String {
   if x == 0 && y == 0 {
     "origin".to_string()
@@ -700,7 +761,7 @@ mod tests {
     let origin = world.spawn((wilderness(1, 2, 1, "origin"), location(2, "Wilderness", Some(1), 101), spatial(2, 0, 0, 10, 10, Some(1))));
     let east = world.spawn((wilderness(2, 3, 1, "grid:1:0"), location(3, "Wilderness", Some(1), 102), spatial(3, 1, 0, 10, 10, Some(1))));
     let manager = EntityManager::from_world(Arc::new(Mutex::new(world)), Arc::new(FactoryRegistry::new()));
-    let mut views = ViewManager::new(WildernessLayout::default());
+    let mut views = ViewManager::new(WildernessLayout::new(3, 3, 10, 10).unwrap());
     assert!(matches!(views.enter_entity(hex, &manager).unwrap(), TransitionOutcome::Ok(_)));
     assert_eq!(views.current_entity(), Some(origin));
 
@@ -715,7 +776,9 @@ mod tests {
       views.transition(
         TransitionIntent::CrossWildernessBoundary{target:(10, 5)}, (9, 5), &manager,
       ).unwrap(),
-      TransitionOutcome::WildernessBoundary{area_x:2, area_y:0}
+      TransitionOutcome::WorldBoundary{
+        world_dx:1, world_dy:0, target_area_x:-1, target_area_y:0, ..
+      }
     ));
     assert_eq!(views.current_entity(), Some(east));
 
@@ -725,6 +788,13 @@ mod tests {
     let TransitionOutcome::Ok(westward) = westward else{panic!("expected west transition")};
     assert_eq!(westward.player_pos, (9, 5));
     assert_eq!(views.current_entity(), Some(origin));
+  }
+
+  #[test]
+  fn single_area_layout_wraps_into_neighboring_world_container() {
+    let layout = WildernessLayout::default();
+    assert_eq!(wrap_area_axis(1, layout.min_x(), layout.max_x()), (1, 0));
+    assert_eq!(wrap_area_axis(-1, layout.min_y(), layout.max_y()), (-1, 0));
   }
 
   #[test]

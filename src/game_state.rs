@@ -12,7 +12,9 @@ use tracing::info;
 use crate::camera::Camera;
 use crate::navigation::Navigator;
 use crate::renderer::{RenderConfig, Tile};
-use crate::views::{Transition, TransitionIntent, TransitionOutcome, ViewManager};
+use crate::views::{
+  Transition, TransitionIntent, TransitionOutcome, ViewManager, WildernessCrossing,
+};
 use crate::wilderness_layout::WildernessLayout;
 use crate::world_map::WorldMap;
 
@@ -146,13 +148,30 @@ impl GameState {
         TransitionOutcome::Ok(_) => {
           info!(coordinates = %self.coordinate_debug_lines().join(" | "), "crossed wilderness area boundary");
         }
-        TransitionOutcome::WildernessBoundary{area_x, area_y} => {
-          self.show_popup(format!(
-            "Wilderness boundary at area ({area_x}, {area_y}); cross-container travel is not implemented"
-          ));
+        TransitionOutcome::WorldBoundary {
+          world_dx,
+          world_dy,
+          target_area_x,
+          target_area_y,
+          crossing,
+        } => {
+          self.cross_world_boundary(
+            world_dx,
+            world_dy,
+            target_area_x,
+            target_area_y,
+            crossing,
+          ).await?;
         }
         _ => {}
       }
+    }
+    Ok(())
+  }
+
+  pub async fn ensure_starting_hex(&mut self) -> Result<()> {
+    if self.map.get((self.player_x, self.player_y)).is_none() {
+      self.generate_hex_at(self.player_x, self.player_y).await?;
     }
     Ok(())
   }
@@ -181,6 +200,55 @@ impl GameState {
     }
 
     Ok(())
+  }
+
+  async fn cross_world_boundary(
+    &mut self,
+    world_dx: i32,
+    world_dy: i32,
+    target_area_x: i32,
+    target_area_y: i32,
+    crossing: WildernessCrossing,
+  ) -> Result<()> {
+    let (hex_x, hex_y) = self.current_hex_coordinates()?;
+    let target_hex = (hex_x + world_dx, hex_y + world_dy);
+    if self.map.get(target_hex).is_none() {
+      self.generate_hex_at(target_hex.0, target_hex.1).await?;
+    }
+    let hex_entity = self
+      .map
+      .get(target_hex)
+      .ok_or_else(|| anyhow!("unable to load destination world container"))?;
+    let outcome = self.view_manager.transition(
+      TransitionIntent::EnterWildernessArea {
+        parent_entity: hex_entity,
+        area_x: target_area_x,
+        area_y: target_area_y,
+        crossing,
+      },
+      (self.player_x, self.player_y),
+      &self.entity_manager,
+    )?;
+    match self.resolve_transition(outcome).await? {
+      TransitionOutcome::Ok(_) => {
+        info!(coordinates = %self.coordinate_debug_lines().join(" | "), "crossed world-container boundary");
+      }
+      other => return Err(anyhow!("unexpected world-boundary transition: {other:?}")),
+    }
+    Ok(())
+  }
+
+  fn current_hex_coordinates(&self) -> Result<(i32, i32)> {
+    if self.view_manager.is_in_world() {
+      return Ok((self.player_x, self.player_y))
+    }
+    let entity = self.view_manager.current_entity().ok_or_else(|| anyhow!("no current area"))?;
+    let parent = self.entity_manager.get_component::<Location, _>(entity)?
+      .get().get_parent_location_id()?.ok_or_else(|| anyhow!("current area has no world-container parent"))?;
+    let hex = self.entity_manager.find_entity_by_location_id::<Hex>(parent)
+      .ok_or_else(|| anyhow!("unable to find current world container"))?;
+    let spatial = self.entity_manager.get_component::<Spatial, _>(hex)?.get();
+    Ok((spatial.get_x(), spatial.get_y()))
   }
 
   pub async fn generate_dungeon(&mut self) -> Result<()> {

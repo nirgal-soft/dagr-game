@@ -131,6 +131,7 @@ async fn run_game(
 
   game_state.player_x = 0;
   game_state.player_y = 0;
+  game_state.ensure_starting_hex().await?;
   game_state.camera.center_on(game_state.player_x, game_state.player_y);
 
   let renderer = renderer::Renderer::new(w, h);

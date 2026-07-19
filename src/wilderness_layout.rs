@@ -38,14 +38,11 @@ impl WildernessLayout {
       && (self.min_y()..=self.max_y()).contains(&y)
   }
 
-  pub fn bounds_label(self) -> String {
-    format!("x={}..{}, y={}..{}", self.min_x(), self.max_x(), self.min_y(), self.max_y())
-  }
 }
 
 impl Default for WildernessLayout {
   fn default() -> Self {
-    Self { columns: 3, rows: 3, area_width: 64, area_height: 40 }
+    Self { columns: 1, rows: 1, area_width: 64, area_height: 40 }
   }
 }
 
@@ -63,11 +60,11 @@ mod tests {
 
   #[test]
   fn centered_layout_has_finite_bounds() {
-    let layout = WildernessLayout::new(3, 3, 64, 40).unwrap();
-    assert_eq!((layout.min_x(), layout.max_x()), (-1, 1));
-    assert_eq!((layout.min_y(), layout.max_y()), (-1, 1));
-    assert!(layout.contains(1, -1));
-    assert!(!layout.contains(2, 0));
+    let layout = WildernessLayout::default();
+    assert_eq!((layout.min_x(), layout.max_x()), (0, 0));
+    assert_eq!((layout.min_y(), layout.max_y()), (0, 0));
+    assert!(layout.contains(0, 0));
+    assert!(!layout.contains(1, 0));
   }
 
   #[test]

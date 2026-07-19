@@ -10,6 +10,12 @@ pub enum TransitionIntent {
   Descend,
   ToLevel(i32),
   CrossWildernessBoundary { target: Pos },
+  EnterWildernessArea {
+    parent_entity: Entity,
+    area_x: i32,
+    area_y: i32,
+    crossing: WildernessCrossing,
+  },
 }
 #[derive(Clone, Debug)]
 pub enum TransitionOutcome {
@@ -18,7 +24,13 @@ pub enum TransitionOutcome {
   NotAtExit,
   NoEntry,
   Unsupported,
-  WildernessBoundary { area_x: i32, area_y: i32 },
+  WorldBoundary {
+    world_dx: i32,
+    world_dy: i32,
+    target_area_x: i32,
+    target_area_y: i32,
+    crossing: WildernessCrossing,
+  },
   NeedsAsync(AsyncWork),
 }
 
