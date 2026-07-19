@@ -31,14 +31,6 @@ impl WildernessProfile {
     }
   }
 
-  fn border_feature(self) -> Feature {
-    match (self.terrain, self.vegetation) {
-      (Terrain::Swamp, _) => Feature::WATER,
-      (Terrain::Mountains, Vegetation::Barren) => Feature::ROCK,
-      (_, Vegetation::DenseForest | Vegetation::LightForest) => Feature::TREE,
-      _ => Feature::ROCK,
-    }
-  }
 }
 
 impl Default for WildernessProfile {
@@ -73,7 +65,7 @@ impl WildernessGenerator {
     self.paint_vegetation(&mut area, &mut rng);
     self.paint_terrain(&mut area, &mut rng);
     self.paint_water(&mut area, &mut rng);
-    self.enclose_with_stable_gates(&mut area);
+    self.clear_stable_gates(&mut area);
     self.carve_routes(&mut area, &mut rng);
     self.place_landmark(&mut area, &mut rng);
 
@@ -136,16 +128,7 @@ impl WildernessGenerator {
     }
   }
 
-  fn enclose_with_stable_gates(&self, area: &mut Area) {
-    let border = self.profile.border_feature();
-    for x in 0..area.width {
-      area.set_feature(x, 0, border);
-      area.set_feature(x, area.height - 1, border);
-    }
-    for y in 0..area.height {
-      area.set_feature(0, y, border);
-      area.set_feature(area.width - 1, y, border);
-    }
+  fn clear_stable_gates(&self, area: &mut Area) {
     for gate in edge_gates(area.width, area.height) {
       area.remove_feature(gate.0, gate.1);
     }
@@ -320,6 +303,8 @@ mod tests {
       assert!(route_exists(&first, center, gate), "gate {gate:?} is unreachable");
     }
     assert_eq!(count(&first, Feature::LANDMARK), 1);
+    assert_eq!(first.get_feature(1, 0), None);
+    assert_eq!(first.get_feature(first.width - 2, first.height - 1), None);
   }
 
   #[test]

@@ -325,6 +325,17 @@ mod tests {
   }
 
   #[test]
+  fn trees_and_water_are_traversable_local_terrain() {
+    let mut area = Area::wilderness(10, 10);
+    area.set_tree(2, 2);
+    area.set_water(3, 3);
+    assert!(area.is_walkable(2, 2));
+    assert!(area.is_opaque(2, 2));
+    assert!(area.is_walkable(3, 3));
+    assert!(!area.is_opaque(3, 3));
+  }
+
+  #[test]
   fn walls_block_and_stairs_are_walkable() {
     let mut area = Area::dungeon(10, 10);
     area.set_wall(2, 2);
