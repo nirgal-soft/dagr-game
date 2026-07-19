@@ -137,12 +137,12 @@ impl WildernessGenerator {
         rng.random_range(2..area.height - 2),
       );
       let distance = (landmark.0 - center.0).abs() + (landmark.1 - center.1).abs();
-      if distance > 5 && area.is_walkable(landmark.0, landmark.1) {
+      if distance > 8 && distance <= 16 && area.is_walkable(landmark.0, landmark.1) {
         area.set_feature(landmark.0, landmark.1, Feature::LANDMARK);
         return;
       }
     }
-    let fallback = ((center.0 + 3).min(area.width - 2), center.1);
+    let fallback = (2, 2);
     area.set_feature(fallback.0, fallback.1, Feature::LANDMARK);
   }
 }

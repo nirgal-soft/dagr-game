@@ -8,6 +8,6 @@ pub use area::Area;
 pub use feature::Feature;
 pub use ground::Ground;
 pub use location_config::LocationConfig;
-pub use poi::PointOfInterest;
+pub use poi::{PoiKind, PointOfInterest};
 
 pub type Pos = (i32, i32);

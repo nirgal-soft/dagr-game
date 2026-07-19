@@ -31,6 +31,13 @@ impl Feature{
   pub const RUBBLE: Self = Self::new(':', Color::DarkGrey, true, false);
   pub const WATER: Self = Self::new('~', Color::Blue, true, false);
   pub const LANDMARK: Self = Self::new('*', Color::Yellow, true, false);
+  pub const RUINS: Self = Self::new('&', Color::DarkYellow, true, false);
+  pub const CAVE: Self = Self::new('O', Color::DarkGrey, true, false);
+  pub const TOMB: Self = Self::new('†', Color::Grey, true, false);
+  pub const LAIR: Self = Self::new('!', Color::Red, true, false);
+  pub const RESOURCE: Self = Self::new('$', Color::Green, true, false);
+  pub const SETTLEMENT: Self = Self::new('H', Color::Yellow, true, false);
+  pub const MINE: Self = Self::new('m', Color::Grey, true, false);
   pub const STAIRS_UP: Self = Self::new('<', Color::Yellow, true, false)
     .with_bg(Color::Rgb{r: 50, g: 40, b: 20});
   pub const STAIRS_DOWN: Self = Self::new('>', Color::Yellow, true, false)

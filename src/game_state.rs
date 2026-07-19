@@ -100,6 +100,9 @@ impl GameState {
   pub fn update_visibility(&mut self) {
     if let Some(area) = self.view_manager.current_area_mut() {
       area.update_visibility(self.player_x, self.player_y);
+      if let Some(label) = area.discover_visible_pois().into_iter().next() {
+        self.show_popup(format!("Discovered: {label}"));
+      }
     }
   }
 

@@ -16,7 +16,7 @@ use dagr_lib::factories::world::{
 use hecs::Entity;
 use tracing::info;
 
-use crate::areas::{Area, LocationConfig, PointOfInterest, Pos};
+use crate::areas::{Area, LocationConfig, PoiKind, PointOfInterest, Pos};
 use crate::errors::ViewError;
 use crate::generators::{dungeon::DungeonGenerator, wilderness::WildernessGenerator};
 use crate::seed::{LocationDiscriminator, derive_seed};
@@ -513,25 +513,20 @@ impl ViewManager {
         let location = entity_manager.get_component::<Location, _>(entity)?.get();
         let spatial = entity_manager.get_component::<Spatial, _>(entity)?.get();
         let seed = location.get_seed().unwrap_or(0) as u64;
-        let generator = location
-          .get_parent_location_id()?
-          .and_then(|parent| entity_manager.find_entity_by_location_id::<Hex>(parent))
-          .and_then(|hex| entity_manager.get_component::<Hex, _>(hex).ok())
-          .map(|hex| WildernessGenerator::for_hex(seed, &hex.get()))
-          .transpose()?
-          .unwrap_or_else(|| WildernessGenerator::new(seed));
+        let parent_id = location.get_parent_location_id()?.ok_or(ViewError::NoParentLocation)?;
+        let parent = entity_manager
+          .find_entity_by_location_id::<Hex>(parent_id)
+          .ok_or(ViewError::LocationNotFound(parent_id))?;
+        let hex = entity_manager.get_component::<Hex, _>(parent)?.get();
+        let generator = WildernessGenerator::for_hex(seed, &hex)?;
         let mut area = generator.generate(spatial.get_width(), spatial.get_length())?;
-        let entrance = area.entrance.unwrap_or((area.width / 2, area.height / 2));
-        area.set_stairs_down(entrance.0, entrance.1);
-
-        let poi_seed = derive_seed(
-          seed,
-          LocationDiscriminator::new(LocationType::Dungeon, entrance.0, entrance.1),
-        );
-        let mut poi = PointOfInterest::new(entrance, LocationType::Dungeon, poi_seed)
-          .with_label("Dungeon entrance");
-
-        if let Some(parent_id) = location.get_parent_location_id()? {
+        let poi_pos = area
+          .find_feature(crate::areas::Feature::LANDMARK)
+          .unwrap_or((area.width / 2, area.height / 2));
+        let poi_kind = PoiKind::from_hex_poi(&hex.get_poi()?);
+        let poi_seed = derive_seed(seed, ("wilderness-poi", poi_pos.0, poi_pos.1));
+        let mut poi = PointOfInterest::new(poi_pos, poi_kind, poi_seed);
+        if poi_kind == PoiKind::Dungeon {
           if let Some(dungeon) = entity_manager.find_child_entity::<Dungeon>(parent_id) {
             poi = poi.with_entity(dungeon);
           }
@@ -772,6 +767,9 @@ mod tests {
     let mut views = ViewManager::new(WildernessLayout::new(3, 3, 10, 10).unwrap());
     assert!(matches!(views.enter_entity(hex, &manager).unwrap(), TransitionOutcome::Ok(_)));
     assert_eq!(views.current_entity(), Some(origin));
+    let area = views.current_area().expect("generated wilderness");
+    assert!(area.stairs_down.is_none());
+    assert_eq!(area.pois().next().map(|poi| poi.kind), Some(PoiKind::Ruins));
 
     let eastward = views.transition(
       TransitionIntent::CrossWildernessBoundary{target:(10, 5)}, (9, 5), &manager,

@@ -1,4 +1,4 @@
-use super::{Feature, Ground, LocationConfig, PointOfInterest, Pos};
+use super::{Feature, Ground, LocationConfig, PoiKind, PointOfInterest, Pos};
 use crate::renderer::{RenderConfig, Tile};
 use crate::visiblity::{Visibility, VisibilityMap};
 use dagr_lib::components::world::location::LocationType;
@@ -74,6 +74,11 @@ impl Area {
   pub fn remove_feature(&mut self, x: i32, y: i32) {
     self.features.remove(&(x, y));
   }
+  pub fn find_feature(&self, feature: Feature) -> Option<Pos> {
+    self.features
+      .iter()
+      .find_map(|(pos, candidate)| (*candidate == feature).then_some(*pos))
+  }
 
   //---convience mutators for common features---
   pub fn set_wall(&mut self, x: i32, y: i32) {
@@ -102,7 +107,13 @@ impl Area {
 
   //---poi access---
   pub fn add_poi(&mut self, poi: PointOfInterest) {
-    self.pois.insert(poi.pos, poi);
+    let pos = poi.pos;
+    let feature = poi.kind.feature();
+    if poi.kind.enterable_location_type() == Some(LocationType::Dungeon) {
+      self.stairs_down = Some(pos);
+    }
+    self.set_feature(pos.0, pos.1, feature);
+    self.pois.insert(pos, poi);
   }
   pub fn get_poi_at(&self, pos: Pos) -> Option<&PointOfInterest> {
     self.pois.get(&pos)
@@ -115,6 +126,21 @@ impl Area {
   }
   pub fn has_poi_at(&self, pos: Pos) -> bool {
     self.pois.contains_key(&pos)
+  }
+  pub fn discover_visible_pois(&mut self) -> Vec<String> {
+    let visible = self
+      .pois
+      .iter()
+      .filter_map(|(pos, poi)| (!poi.discovered && self.is_visible(pos.0, pos.1)).then_some(*pos))
+      .collect::<Vec<_>>();
+    let mut labels = Vec::new();
+    for pos in visible {
+      if let Some(poi) = self.pois.get_mut(&pos) {
+        poi.discovered = true;
+        labels.push(poi.label.clone());
+      }
+    }
+    labels
   }
   pub fn find_poi_by_entity(&self, entity: hecs::Entity) -> Option<Pos> {
     self
@@ -333,6 +359,26 @@ mod tests {
     assert!(area.is_opaque(2, 2));
     assert!(area.is_walkable(3, 3));
     assert!(!area.is_opaque(3, 3));
+  }
+
+  #[test]
+  fn visible_pois_are_discovered_only_once() {
+    let mut area = Area::wilderness(20, 20);
+    area.add_poi(PointOfInterest::new((6, 5), PoiKind::Ruins, 42));
+    assert!(area.discover_visible_pois().is_empty());
+    area.update_visibility(5, 5);
+    assert_eq!(area.discover_visible_pois(), vec!["Ancient ruins"]);
+    assert!(area.discover_visible_pois().is_empty());
+    assert_eq!(area.get_tile(6, 5), Feature::RUINS.tile);
+  }
+
+  #[test]
+  fn only_dungeon_pois_create_descendable_stairs() {
+    let mut area = Area::wilderness(20, 20);
+    area.add_poi(PointOfInterest::new((4, 4), PoiKind::Ruins, 1));
+    assert!(!area.is_stairs_down(4, 4));
+    area.add_poi(PointOfInterest::new((8, 8), PoiKind::Dungeon, 2));
+    assert!(area.is_stairs_down(8, 8));
   }
 
   #[test]
