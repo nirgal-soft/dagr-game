@@ -21,6 +21,7 @@ use crate::combat::{controller, picker::MonsterChoice, session::CombatSession};
 use crate::generators::arena::{
   COMBAT_ARENA_HEIGHT, COMBAT_ARENA_KEY, COMBAT_ARENA_WIDTH,
 };
+use crate::inspection::{mode::LookMode, resolver};
 use crate::navigation::Navigator;
 use crate::renderer::{RenderConfig, Tile};
 use crate::views::{
@@ -39,6 +40,7 @@ pub struct GameState {
   pub render_config: RenderConfig,
   navigator: Navigator,
   pub combat: CombatSession,
+  look_mode: Option<LookMode>,
   pub popup_message: Option<String>,
 }
 
@@ -60,6 +62,7 @@ impl GameState {
       render_config: RenderConfig::default(),
       navigator: Navigator::new(),
       combat: CombatSession::new(pool),
+      look_mode: None,
       popup_message: None,
     };
     state.rebuild_map();
@@ -569,6 +572,52 @@ impl GameState {
 
   pub fn dismiss_popup(&mut self) {
     self.popup_message = None;
+  }
+
+  pub fn is_looking(&self)->bool{self.look_mode.is_some()}
+  pub fn look_cursor(&self)->Option<(i32,i32)>{self.look_mode.map(LookMode::cursor)}
+
+  pub fn toggle_look(&mut self){
+    if self.look_mode.is_some(){
+      self.close_look();
+      return
+    }
+    let Some(area)=self.view_manager.current_area() else{
+      self.show_popup("Look mode is available inside local areas.");
+      return
+    };
+    if area.in_bounds(self.player_x,self.player_y){
+      self.popup_message=None;
+      self.look_mode=Some(LookMode::new((self.player_x,self.player_y)));
+    }
+  }
+
+  pub fn move_look_cursor(&mut self,dx:i32,dy:i32){
+    let Some(area)=self.view_manager.current_area() else{return};
+    if let Some(mode)=self.look_mode.as_mut(){
+      mode.move_by(dx,dy,(area.width,area.height));
+      let cursor=mode.cursor();
+      self.camera.center_on(cursor.0,cursor.1);
+    }
+  }
+
+  pub fn close_look(&mut self){
+    self.look_mode=None;
+    self.camera.center_on(self.player_x,self.player_y);
+  }
+
+  pub fn inspection_lines(&self)->Vec<String>{
+    let Some(pos)=self.look_cursor() else{return Vec::new()};
+    let Some(area)=self.view_manager.current_area() else{return Vec::new()};
+    if !area.is_visible(pos.0,pos.1){
+      return vec![format!("tile: ({}, {})",pos.0,pos.1),"Unseen".to_string()]
+    }
+    let actor=if pos==(self.player_x,self.player_y){
+      Some("You".to_string())
+    }else{
+      self.enemy_at(pos.0,pos.1).map(|enemy|enemy.name)
+    };
+    resolver::inspect(area,pos,actor.as_deref()).lines()
   }
 
   pub fn show_popup(&mut self, message: impl Into<String>) {

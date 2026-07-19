@@ -17,6 +17,8 @@ pub enum Action{
   PickerInput(char),
   Dismiss,
   Explore,
+  Look,
+  Cancel,
   None,
 }
 
@@ -76,6 +78,8 @@ impl InputManager{
       KeyCode::Char('q') => Action::Quit,
       KeyCode::Char('.') => Action::Wait,
       KeyCode::Char('o') | KeyCode::Char('O') => Action::Explore,
+      KeyCode::Char('x') => Action::Look,
+      KeyCode::Esc => Action::Cancel,
       KeyCode::Char('D') => Action::GenerateDungeon,
       KeyCode::Char('M') => Action::OpenMonsterPicker,
       KeyCode::Char('R') => Action::ResetArena,
@@ -89,6 +93,13 @@ impl InputManager{
 mod tests{
   use super::*;
   use crossterm::event::KeyModifiers;
+
+  #[test]
+  fn x_enters_look_mode(){
+    let input=InputManager::new();
+    let action=input.key_to_action(KeyEvent::new(KeyCode::Char('x'),KeyModifiers::NONE),false);
+    assert!(matches!(action,Action::Look));
+  }
 
   #[test]
   fn auto_explore_accepts_lowercase_and_uppercase_o(){

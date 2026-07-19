@@ -1,7 +1,7 @@
 use crossterm::style::Color;
 use crate::renderer::Tile;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ground{
   pub tile: Tile,
 }
@@ -30,4 +30,20 @@ impl Ground{
   pub const SWAMP: Self = Self{
     tile: Tile{symbol: '.', fg: Color::DarkCyan, bg: Color::Rgb{r: 8, g: 18, b: 16}}
   };
+
+  pub fn inspection(&self)->(&'static str,&'static str){
+    if *self==Self::DUNGEON{
+      ("Stone floor","A worn stone surface underfoot.")
+    }else if *self==Self::MOUNTAIN{
+      ("Mountain ground","Hard, uneven ground among exposed stone.")
+    }else if *self==Self::HILLS{
+      ("Hillside","Rolling, sloped earth underfoot.")
+    }else if *self==Self::PLAINS{
+      ("Open grass","Low grass and open ground.")
+    }else if *self==Self::SWAMP{
+      ("Wet ground","Soft, waterlogged earth.")
+    }else{
+      ("Forest floor","Soil, grass, and leaf litter.")
+    }
+  }
 }

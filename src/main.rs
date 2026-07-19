@@ -24,6 +24,7 @@ mod errors;
 mod game_state;
 mod generators;
 mod input;
+mod inspection;
 mod menu;
 mod scene_playground;
 mod navigation;
@@ -158,7 +159,19 @@ async fn run_game(
     }
     std::thread::sleep(std::time::Duration::from_millis(16));
 
-    match input.poll_input(game_state.combat.picker_is_open()){
+    let action=input.poll_input(game_state.combat.picker_is_open());
+    if game_state.is_looking(){
+      match action{
+        Action::Move(dx,dy) => game_state.move_look_cursor(dx,dy),
+        Action::Look | Action::Cancel => game_state.close_look(),
+        Action::Quit => break,
+        _ => {},
+      }
+      needs_refresh=true;
+      continue
+    }
+
+    match action{
       Action::Quit => break,
       Action::Wait => {
         game_state.wait_turn().await?;
@@ -186,6 +199,14 @@ async fn run_game(
         game_state.cancel_navigation();
         game_state.descend().await?;
         game_state.update_visibility();
+        needs_refresh = true;
+      },
+      Action::Look => {
+        game_state.toggle_look();
+        needs_refresh = true;
+      },
+      Action::Cancel => {
+        game_state.dismiss_popup();
         needs_refresh = true;
       },
       Action::Explore => {

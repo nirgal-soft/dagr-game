@@ -17,7 +17,13 @@ wounds, defeat, and tile positions persist, while dice outcomes accumulate in
 the non-modal **Combat rolls** panel. Press `R` to clear positioned arena
 monsters and restore the arena fighter to full HP. Arena monsters notice the
 fighter within eight tiles, advance one tile after each player action, and attack
-when adjacent. Press `.` to wait and exercise enemy turns directly. Press `o` or
+when adjacent. Press `.` to wait and exercise enemy turns directly.
+
+Press `x` in a local area to enter free Look mode. Movement keys reposition the
+inspection cursor without consuming a turn, the right-hand panel describes the
+visible creature, fixtures, POI, terrain feature, and ground under the cursor,
+and `x` or `Esc` exits. Decorative fixtures such as bedrolls can carry client
+names and descriptions without becoming persistent backend entities. Press `o` or
 `O` to auto-explore other local areas; this also dismisses an open discovery or
 enemy popup so exploration starts immediately.
 

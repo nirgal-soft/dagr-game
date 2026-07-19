@@ -72,11 +72,15 @@ impl Renderer{
       let world_x = x as i32 + game_state.camera.x;
       let world_y = y as i32 + game_state.camera.y;
 
-      if world_x == game_state.player_x && world_y == game_state.player_y{
-        return Some(game_state.render_config.player_tile());
+      let mut tile=if world_x == game_state.player_x && world_y == game_state.player_y{
+        Some(game_state.render_config.player_tile())
+      }else{
+        game_state.get_location_tile(world_x,world_y)
+      };
+      if game_state.look_cursor()==Some((world_x,world_y)){
+        tile=Some(tile.unwrap_or_else(||Tile::new(' ',Color::White)).with_bg(Color::DarkBlue));
       }
-
-      game_state.get_location_tile(world_x, world_y)
+      tile
     })?;
 
     Ok(())
@@ -93,7 +97,7 @@ impl Renderer{
     stats.extend([
       format!("view: {}", game_state.current_view_label()),
       "M spawn  R reset".to_string(),
-      "o explore  q quit".to_string(),
+      "x look  o explore  q quit".to_string(),
     ]);
     let mut stats_panel = Panel::new(35, self.map_height, 28, 8);
     stats_panel.set_title("Stats".to_string());
@@ -103,11 +107,16 @@ impl Renderer{
     let combat_width = self.width.saturating_sub(63);
     if combat_width >= 20 {
       let mut combat = Panel::new(63, self.map_height, combat_width, 8);
-      combat.set_title("Combat rolls".to_string());
-      let lines=game_state.combat.log_lines(6);
-      combat.set_content(if lines.is_empty(){
-        vec!["No exchanges yet. Press M to choose an opponent.".to_string()]
-      }else{lines});
+      if game_state.is_looking(){
+        combat.set_title("Look".to_string());
+        combat.set_content(game_state.inspection_lines());
+      }else{
+        combat.set_title("Combat rolls".to_string());
+        let lines=game_state.combat.log_lines(6);
+        combat.set_content(if lines.is_empty(){
+          vec!["No exchanges yet. Press M to choose an opponent.".to_string()]
+        }else{lines});
+      }
       combat.draw(stdout)?;
     }
 

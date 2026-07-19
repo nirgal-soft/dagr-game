@@ -45,6 +45,30 @@ impl Feature{
   pub const DOOR_CLOSED: Self = Self::new('+', Color::White, false, true);
   pub const DOOR_OPEN: Self = Self::new('/', Color::White, true, false);
 
+  pub fn inspection(&self) -> (&'static str, &'static str){
+    match *self{
+      Self::WALL => ("Stone wall", "A solid barrier of fitted or natural stone."),
+      Self::TREE => ("Tree", "A mature tree with a dense, sight-blocking crown."),
+      Self::BRUSH => ("Brush", "Low brush and tangled undergrowth."),
+      Self::ROCK => ("Boulder", "A heavy outcrop that blocks passage."),
+      Self::RUBBLE => ("Rubble", "Loose stones and broken ground."),
+      Self::WATER => ("Water", "Open water shallow enough to cross cautiously."),
+      Self::LANDMARK => ("Landmark", "A conspicuous feature worth investigating."),
+      Self::RUINS => ("Ancient ruins", "Weathered remains from an earlier occupation."),
+      Self::CAVE => ("Cave mouth", "A dark opening in the earth or stone."),
+      Self::TOMB => ("Forgotten tomb", "A place built to hold the dead."),
+      Self::LAIR => ("Signs of a lair", "Tracks and disturbance suggest something lives nearby."),
+      Self::RESOURCE => ("Natural resource", "A useful concentration of local material."),
+      Self::SETTLEMENT => ("Settlement", "A place where people have established a lasting presence."),
+      Self::MINE => ("Mine workings", "An excavated site following material below the surface."),
+      Self::STAIRS_UP => ("Way up", "A route to the level above."),
+      Self::STAIRS_DOWN => ("Way down", "A route to the level below."),
+      Self::DOOR_CLOSED => ("Closed door", "A closed barrier that may be opened."),
+      Self::DOOR_OPEN => ("Open door", "An open passage through a doorway."),
+      _ => ("Feature", "A visible feature of this place."),
+    }
+  }
+
   pub fn is_stairs_up(&self) -> bool{
     self.tile.symbol == '<'
   }

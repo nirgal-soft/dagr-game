@@ -1,4 +1,4 @@
-use super::{Feature, Ground, LocationConfig, PoiKind, PointOfInterest, Pos};
+use super::{Feature, Fixture, Ground, LocationConfig, PoiKind, PointOfInterest, Pos};
 use crate::renderer::{RenderConfig, Tile};
 use crate::visiblity::{Visibility, VisibilityMap};
 use dagr_lib::components::world::location::LocationType;
@@ -10,6 +10,7 @@ pub struct Area {
   pub height: i32,
   ground: Ground,
   features: HashMap<Pos, Feature>,
+  fixtures: HashMap<Pos, Vec<Fixture>>,
   pois: HashMap<Pos, PointOfInterest>,
   seen: HashSet<Pos>,
   visibility: Option<VisibilityMap>,
@@ -27,6 +28,7 @@ impl Area {
       height,
       ground,
       features: HashMap::new(),
+      fixtures: HashMap::new(),
       pois: HashMap::new(),
       seen: HashSet::new(),
       visibility: None,
@@ -78,6 +80,15 @@ impl Area {
     self.features
       .iter()
       .find_map(|(pos, candidate)| (*candidate == feature).then_some(*pos))
+  }
+  pub fn add_fixture(&mut self, fixture: Fixture) {
+    self.fixtures.entry(fixture.pos).or_default().push(fixture);
+  }
+  pub fn fixtures_at(&self, x: i32, y: i32) -> &[Fixture] {
+    self.fixtures.get(&(x, y)).map(Vec::as_slice).unwrap_or(&[])
+  }
+  pub fn ground(&self) -> Ground {
+    self.ground
   }
 
   //---convience mutators for common features---
@@ -237,10 +248,9 @@ impl Area {
 
   //---rendering---
   pub fn get_tile(&self, x: i32, y: i32) -> Tile {
-    match self.features.get(&(x, y)) {
-      Some(feature) => feature.tile,
-      None => self.ground.tile,
-    }
+    self.fixtures_at(x, y).last().map(|fixture| fixture.kind.tile())
+      .or_else(|| self.features.get(&(x, y)).map(|feature| feature.tile))
+      .unwrap_or(self.ground.tile)
   }
 
   pub fn get_visible_tile(&self, x: i32, y: i32, config: &RenderConfig) -> Option<Tile> {

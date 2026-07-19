@@ -1,11 +1,13 @@
 mod area;
 mod feature;
+mod fixture;
 mod ground;
 mod location_config;
 mod poi;
 
 pub use area::Area;
 pub use feature::Feature;
+pub use fixture::{Fixture, FixtureKind};
 pub use ground::Ground;
 pub use location_config::LocationConfig;
 pub use poi::{PoiKind, PointOfInterest};
