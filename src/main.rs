@@ -33,6 +33,7 @@ mod seed;
 mod ui;
 mod views;
 mod visiblity;
+mod wilderness_layout;
 mod world_map;
 use input::{Action, InputManager};
 
@@ -67,10 +68,11 @@ async fn run() -> Result<()>{
     .unwrap_or_else(|_| "0".to_string())
     .parse::<u64>()?;
   let pool = Arc::new(connection::establish_connection().await?);
+  let wilderness_layout = wilderness_layout::WildernessLayout::from_env()?;
 
   loop{
     match menu::show_main_menu(world_seed)?{
-      menu::MainMenuChoice::Play => run_game(pool.clone(), world_seed).await?,
+      menu::MainMenuChoice::Play => run_game(pool.clone(), world_seed, wilderness_layout).await?,
       menu::MainMenuChoice::DebugTools => run_debug_tools(pool.clone()).await?,
       menu::MainMenuChoice::Quit => break,
     }
@@ -87,7 +89,11 @@ async fn run_debug_tools(pool: Arc<sqlx::PgPool>) -> Result<()>{
   }
 }
 
-async fn run_game(pool: Arc<sqlx::PgPool>, world_seed: u64) -> Result<()>{
+async fn run_game(
+  pool: Arc<sqlx::PgPool>,
+  world_seed: u64,
+  wilderness_layout: wilderness_layout::WildernessLayout,
+) -> Result<()>{
   let world = Arc::new(Mutex::new(World::new()));
   let registry = Arc::new(
     build_factor_registry(AppConfig{
@@ -116,7 +122,12 @@ async fn run_game(pool: Arc<sqlx::PgPool>, world_seed: u64) -> Result<()>{
   let view_w = w.saturating_sub(2);
   let view_h = map_height.saturating_sub(2);
 
-  let mut game_state = game_state::GameState::new(entity_manager, view_w, view_h);
+  let mut game_state = game_state::GameState::new(
+    entity_manager,
+    view_w,
+    view_h,
+    wilderness_layout,
+  );
 
   game_state.player_x = 0;
   game_state.player_y = 0;

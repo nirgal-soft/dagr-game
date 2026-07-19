@@ -18,6 +18,7 @@ pub enum TransitionOutcome {
   NotAtExit,
   NoEntry,
   Unsupported,
+  WildernessBoundary { area_x: i32, area_y: i32 },
   NeedsAsync(AsyncWork),
 }
 

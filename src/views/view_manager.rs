@@ -20,6 +20,7 @@ use crate::areas::{Area, LocationConfig, PointOfInterest, Pos};
 use crate::errors::ViewError;
 use crate::generators::{dungeon::DungeonGenerator, wilderness::WildernessGenerator};
 use crate::seed::{LocationDiscriminator, derive_seed};
+use crate::wilderness_layout::WildernessLayout;
 
 use super::area_key::AreaKey;
 use super::transition::{
@@ -30,13 +31,15 @@ use super::view_mode::ViewMode;
 pub struct ViewManager {
   pub mode: ViewMode,
   area_cache: HashMap<AreaKey, Area>,
+  wilderness_layout: WildernessLayout,
 }
 
 impl ViewManager {
-  pub fn new() -> Self {
+  pub fn new(wilderness_layout: WildernessLayout) -> Self {
     Self {
       mode: ViewMode::World,
       area_cache: HashMap::new(),
+      wilderness_layout,
     }
   }
 
@@ -111,8 +114,8 @@ impl ViewManager {
         parent_entity: entity,
         area_x: 0,
         area_y: 0,
-        width: 10,
-        length: 10,
+        width: self.wilderness_layout.area_width,
+        length: self.wilderness_layout.area_height,
         crossing: WildernessCrossing{area_dx: 0, area_dy: 0, attempted_tile: (5, 5)},
       }));
     }
@@ -224,8 +227,8 @@ impl ViewManager {
       parent_entity: hex_entity,
       area_x: 0,
       area_y: 0,
-      width: 10,
-      length: 10,
+      width: self.wilderness_layout.area_width,
+      length: self.wilderness_layout.area_height,
       crossing: WildernessCrossing{area_dx: 0, area_dy: 0, attempted_tile: (5, 5)},
     }))
   }
@@ -358,6 +361,12 @@ impl ViewManager {
       .ok_or(ViewError::LocationNotFound(parent_id))?;
     let target_x = current_spatial.get_x() + area_dx;
     let target_y = current_spatial.get_y() + area_dy;
+    if !self.wilderness_layout.contains(target_x, target_y) {
+      return Ok(TransitionOutcome::WildernessBoundary {
+        area_x: target_x,
+        area_y: target_y,
+      });
+    }
     let crossing = WildernessCrossing { area_dx, area_dy, attempted_tile };
     let area_key = wilderness_area_key(target_x, target_y);
 
@@ -633,7 +642,7 @@ fn wilderness_arrival(crossing: WildernessCrossing, width: i32, length: i32) -> 
 
 impl Default for ViewManager {
   fn default() -> Self {
-    Self::new()
+    Self::new(WildernessLayout::default())
   }
 }
 
@@ -691,7 +700,7 @@ mod tests {
     let origin = world.spawn((wilderness(1, 2, 1, "origin"), location(2, "Wilderness", Some(1), 101), spatial(2, 0, 0, 10, 10, Some(1))));
     let east = world.spawn((wilderness(2, 3, 1, "grid:1:0"), location(3, "Wilderness", Some(1), 102), spatial(3, 1, 0, 10, 10, Some(1))));
     let manager = EntityManager::from_world(Arc::new(Mutex::new(world)), Arc::new(FactoryRegistry::new()));
-    let mut views = ViewManager::new();
+    let mut views = ViewManager::new(WildernessLayout::default());
     assert!(matches!(views.enter_entity(hex, &manager).unwrap(), TransitionOutcome::Ok(_)));
     assert_eq!(views.current_entity(), Some(origin));
 
@@ -700,6 +709,14 @@ mod tests {
     ).unwrap();
     let TransitionOutcome::Ok(eastward) = eastward else{panic!("expected east transition")};
     assert_eq!(eastward.player_pos, (0, 5));
+    assert_eq!(views.current_entity(), Some(east));
+
+    assert!(matches!(
+      views.transition(
+        TransitionIntent::CrossWildernessBoundary{target:(10, 5)}, (9, 5), &manager,
+      ).unwrap(),
+      TransitionOutcome::WildernessBoundary{area_x:2, area_y:0}
+    ));
     assert_eq!(views.current_entity(), Some(east));
 
     let westward = views.transition(

@@ -13,6 +13,7 @@ use crate::camera::Camera;
 use crate::navigation::Navigator;
 use crate::renderer::{RenderConfig, Tile};
 use crate::views::{Transition, TransitionIntent, TransitionOutcome, ViewManager};
+use crate::wilderness_layout::WildernessLayout;
 use crate::world_map::WorldMap;
 
 pub struct GameState {
@@ -28,14 +29,19 @@ pub struct GameState {
 }
 
 impl GameState {
-  pub fn new(entity_manager: EntityManager, view_w: u16, view_h: u16) -> Self {
+  pub fn new(
+    entity_manager: EntityManager,
+    view_w: u16,
+    view_h: u16,
+    wilderness_layout: WildernessLayout,
+  ) -> Self {
     let mut state = Self {
       entity_manager,
       map: WorldMap::new(),
       camera: Camera::new(view_w, view_h),
       player_x: 0,
       player_y: 0,
-      view_manager: ViewManager::new(),
+      view_manager: ViewManager::new(wilderness_layout),
       render_config: RenderConfig::default(),
       navigator: Navigator::new(),
       popup_message: None,
@@ -136,8 +142,17 @@ impl GameState {
         (self.player_x, self.player_y),
         &self.entity_manager,
       )?;
-      self.resolve_transition(outcome).await?;
-      info!(coordinates = %self.coordinate_debug_lines().join(" | "), "crossed wilderness area boundary");
+      match self.resolve_transition(outcome).await? {
+        TransitionOutcome::Ok(_) => {
+          info!(coordinates = %self.coordinate_debug_lines().join(" | "), "crossed wilderness area boundary");
+        }
+        TransitionOutcome::WildernessBoundary{area_x, area_y} => {
+          self.show_popup(format!(
+            "Wilderness boundary at area ({area_x}, {area_y}); cross-container travel is not implemented"
+          ));
+        }
+        _ => {}
+      }
     }
     Ok(())
   }
