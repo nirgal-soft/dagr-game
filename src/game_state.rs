@@ -1,7 +1,5 @@
 use anyhow::{Result, anyhow};
 use dagr_lib::components::{
-  characters::{character::Character, position::CharacterPosition},
-  monsters::monster_stats::MonsterStats,
   stats::base_stats::BaseStatsData,
   world::{hex::Hex, location::Location, spatial::Spatial, wilderness::Wilderness},
 };
@@ -19,6 +17,7 @@ use crossterm::style::Color;
 use tracing::info;
 
 use crate::camera::Camera;
+use crate::combat::{controller, picker::MonsterChoice, session::CombatSession};
 use crate::generators::arena::{
   COMBAT_ARENA_HEIGHT, COMBAT_ARENA_KEY, COMBAT_ARENA_WIDTH,
 };
@@ -39,12 +38,14 @@ pub struct GameState {
   pub view_manager: ViewManager,
   pub render_config: RenderConfig,
   navigator: Navigator,
+  pub combat: CombatSession,
   pub popup_message: Option<String>,
 }
 
 impl GameState {
   pub fn new(
     entity_manager: EntityManager,
+    pool: std::sync::Arc<sqlx::PgPool>,
     view_w: u16,
     view_h: u16,
     wilderness_layout: WildernessLayout,
@@ -58,6 +59,7 @@ impl GameState {
       view_manager: ViewManager::new(wilderness_layout),
       render_config: RenderConfig::default(),
       navigator: Navigator::new(),
+      combat: CombatSession::new(pool),
       popup_message: None,
     };
     state.rebuild_map();
@@ -129,7 +131,7 @@ impl GameState {
   pub fn get_location_tile(&self, x: i32, y: i32) -> Option<Tile> {
     let area = self.view_manager.current_area()?;
     let terrain = area.get_visible_tile(x, y, &self.render_config)?;
-    if area.is_visible(x, y) && self.enemy_name_at(x, y).is_some() {
+    if area.is_visible(x, y) && self.enemy_at(x, y).is_some() {
       return Some(Tile::new('g', Color::Red));
     }
     Some(terrain)
@@ -145,59 +147,38 @@ impl GameState {
       .ok()
   }
 
-  fn enemy_name_at(&self, x: i32, y: i32) -> Option<String> {
-    let location_id = self.current_location_id()?;
-    let world = self.entity_manager.world();
-    let world = world.lock().ok()?;
-    world
-      .query::<(&Character, &MonsterStats, &CharacterPosition)>()
-      .iter()
-      .find_map(|(_, (character, _, position))| {
-        let position = position.get();
-        (position.get_location_id().ok() == Some(location_id)
-          && position.x == x
-          && position.y == y)
-          .then(|| character.get().get_name().to_string())
-      })
+  fn enemy_at(&self, x:i32, y:i32) -> Option<controller::EnemyAtTile> {
+    controller::enemy_at(&self.entity_manager, self.current_location_id()?, x, y)
   }
 
-  fn has_enemy_in_current_location(&self) -> bool {
-    let Some(location_id) = self.current_location_id() else{return false};
-    let world = self.entity_manager.world();
-    let Ok(world) = world.lock() else{return false};
-    world
-      .query::<(&MonsterStats, &CharacterPosition)>()
-      .iter()
-      .any(|(_, (_, position))| position.get().get_location_id().ok() == Some(location_id))
-  }
-
-  pub async fn spawn_test_enemy(&mut self) -> Result<()> {
+  pub async fn open_monster_picker(&mut self) -> Result<()> {
     if self.view_manager.is_in_world() {
       self.show_popup("Enter a local area before spawning an enemy.");
       return Ok(())
     }
-    if self.has_enemy_in_current_location() {
-      self.show_popup("A test enemy already occupies this area.");
-      return Ok(())
-    }
-    let location_id = self
-      .current_location_id()
+    self.combat.open_picker().await
+  }
+
+  pub async fn spawn_selected_monster(&mut self) -> Result<()> {
+    let Some(choice) = self.combat.selected_monster() else{return Ok(())};
+    self.combat.close_picker();
+    self.spawn_monster(choice).await
+  }
+
+  async fn spawn_monster(&mut self, choice: MonsterChoice) -> Result<()> {
+    let location_id = self.current_location_id()
       .ok_or_else(|| anyhow!("current area has no location"))?;
     let position = {
-      let area = self
-        .view_manager
-        .current_area()
+      let area = self.view_manager.current_area()
         .ok_or_else(|| anyhow!("current area is unavailable"))?;
       let mut found = None;
       for radius in 2_i32..=8 {
         for dy in -radius..=radius {
           for dx in -radius..=radius {
-            if dx.abs() != radius && dy.abs() != radius {
-              continue
-            }
+            if dx.abs() != radius && dy.abs() != radius { continue }
             let candidate = (self.player_x + dx, self.player_y + dy);
             if area.is_walkable(candidate.0, candidate.1)
-              && self.enemy_name_at(candidate.0, candidate.1).is_none()
+              && self.enemy_at(candidate.0, candidate.1).is_none()
             {
               found = Some(candidate);
               break
@@ -207,11 +188,11 @@ impl GameState {
         }
         if found.is_some() { break }
       }
-      found.ok_or_else(|| anyhow!("no nearby walkable tile can hold the test enemy"))?
+      found.ok_or_else(|| anyhow!("no nearby walkable tile can hold the monster"))?
     };
     self.entity_manager.create(MonsterCharacterSeed {
-      name: "Goblin scout".to_string(),
-      monster_type_key: "core:goblin".to_string(),
+      name: choice.name.clone(),
+      monster_type_key: choice.key,
       base_stats: BaseStatsData::default(),
       position: Some(CharacterPositionSeed {
         location_id,
@@ -219,7 +200,23 @@ impl GameState {
         y: position.1,
       }),
     }).await?;
-    self.show_popup("A goblin scout appears nearby.");
+    self.show_popup(format!("{} enters the arena.", choice.name));
+    Ok(())
+  }
+
+  pub fn player_hit_points(&self) -> Option<(i32,i32)> {
+    self.combat.hit_points(&self.entity_manager)
+  }
+
+  pub async fn reset_combat_arena(&mut self) -> Result<()> {
+    if !self.is_combat_arena(){
+      self.show_popup("Arena reset is only available in the combat arena.");
+      return Ok(())
+    }
+    let location_id=self.current_location_id()
+      .ok_or_else(||anyhow!("combat arena has no location"))?;
+    self.combat.reset_arena(&self.entity_manager,location_id).await?;
+    self.show_popup("The arena is cleared. You recover to full HP.");
     Ok(())
   }
 
@@ -239,11 +236,29 @@ impl GameState {
 
     let Some(area) = self.view_manager.current_area() else{return Ok(())};
     if area.in_bounds(new_x, new_y) {
-      if let Some(name) = self.enemy_name_at(new_x, new_y) {
-        self.show_popup(format!("{name} blocks your way."));
+      if self.player_hit_points().is_some_and(|(current,_)|current == 0) {
+        self.show_popup("You are down. Leave the arena to reset the match later.");
         return Ok(())
       }
-      if area.is_walkable(new_x, new_y) {
+      if let Some(enemy) = self.enemy_at(new_x, new_y) {
+        if let Some(player) = self.combat.player() {
+          let (_,message) = controller::exchange(
+            self.combat.pool(),
+            &self.entity_manager,
+            player,
+            enemy,
+          ).await?;
+          self.show_popup(message);
+        }else{
+          self.show_popup(format!("{} blocks your way.",enemy.name));
+        }
+        return Ok(())
+      }
+      let walkable = area.is_walkable(new_x, new_y);
+      if walkable {
+        if self.is_combat_arena() {
+          self.combat.move_player(&self.entity_manager,(new_x,new_y)).await?;
+        }
         self.player_x = new_x;
         self.player_y = new_y;
         self.camera.center_on(new_x, new_y);
@@ -318,6 +333,16 @@ impl GameState {
       &self.entity_manager,
     )?;
     self.resolve_transition(outcome).await?;
+    let location_id = self.current_location_id()
+      .ok_or_else(|| anyhow!("combat arena has no location"))?;
+    let position = self.combat.enter_arena(
+      &self.entity_manager,
+      location_id,
+      (self.player_x,self.player_y),
+    ).await?;
+    self.player_x = position.0;
+    self.player_y = position.1;
+    self.camera.center_on(position.0,position.1);
     Ok(())
   }
 

@@ -2,7 +2,7 @@ use std::io::Write;
 use anyhow::Result;
 use crossterm::style::Color;
 use crate::game_state::GameState;
-use crate::ui::{map::Map, stat_bar::StatBar, panel::Panel, popup::Popup};
+use crate::ui::{map::Map, monster_picker, stat_bar::StatBar, panel::Panel, popup::Popup};
 
 pub mod render_config;
 pub use render_config::RenderConfig;
@@ -29,12 +29,15 @@ impl Renderer{
       self.render_location(stdout, &map, game_state)?;
     }
 
+    self.render_ui(stdout, game_state)?;
+
     if let Some(ref message) = game_state.popup_message{
       let popup = Popup::new(message.clone(), self.width, self.height);
       popup.draw(stdout)?;
     }
-
-    self.render_ui(stdout, game_state)?;
+    if let Some(picker) = game_state.combat.picker(){
+      monster_picker::draw(stdout,picker,self.width,self.height)?;
+    }
     
     stdout.flush()?;
     Ok(())
@@ -80,7 +83,10 @@ impl Renderer{
   }
 
   fn render_ui(&self, stdout: &mut std::io::Stdout, game_state: &GameState) -> Result<()>{
-    let stat_bar = StatBar::new(1, self.map_height, "HP".to_string(), 45, 100, 20);
+    let (current_hp,max_hp)=game_state.player_hit_points().unwrap_or((0,0));
+    let stat_bar = StatBar::new(
+      1,self.map_height,"VITALITY".to_string(),current_hp.max(0) as u32,max_hp.max(0) as u32,20,
+    );
     stat_bar.draw(stdout)?;
 
     let hexes_explored = game_state.map.count();
@@ -90,21 +96,22 @@ impl Renderer{
       format!("view: {}", game_state.current_view_label()),
       format!("cam: ({}, {})", game_state.camera.x, game_state.camera.y),
     ]);
-    let mut stats_panel = Panel::new(21, self.map_height, 28, 8);
+    let mut stats_panel = Panel::new(35, self.map_height, 28, 8);
     stats_panel.set_title("Stats".to_string());
     stats_panel.set_content(stats);
     stats_panel.draw(stdout)?;
 
-    let controls_width = self.width.saturating_sub(49);
+    let controls_width = self.width.saturating_sub(63);
     if controls_width >= 20 {
-      let mut controls = Panel::new(49, self.map_height, controls_width, 8);
+      let mut controls = Panel::new(63, self.map_height, controls_width, 8);
       controls.set_title("Controls".to_string());
       controls.set_content(vec![
         "move: arrows / hjklyubn".to_string(),
         "enter/descend: >  ascend: <".to_string(),
         "auto-explore: o or O".to_string(),
         "dismiss popup: Space".to_string(),
-        "test enemy: M  quit: q".to_string(),
+        "spawn: M  reset arena: R".to_string(),
+        "quit: q".to_string(),
       ]);
       controls.draw(stdout)?;
     }

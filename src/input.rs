@@ -8,7 +8,13 @@ pub enum Action{
   Ascend,
   Descend,
   GenerateDungeon,
-  SpawnTestEnemy,
+  OpenMonsterPicker,
+  ResetArena,
+  PickerConfirm,
+  PickerCancel,
+  PickerBackspace,
+  PickerMove(i32),
+  PickerInput(char),
   Dismiss,
   Explore,
   None,
@@ -22,10 +28,10 @@ impl InputManager{
     Self
   }
 
-  pub fn poll_input(&self) -> Action{
+  pub fn poll_input(&self, text_mode: bool) -> Action{
     if event::poll(Duration::from_millis(0)).unwrap_or(false){
       if let Ok(Event::Key(key)) = event::read(){
-        return self.key_to_action(key);
+        return self.key_to_action(key, text_mode);
       }
     }
 
@@ -35,7 +41,7 @@ impl InputManager{
   pub fn wait_for_input(&self) -> Action{
     loop{
       if let Ok(Event::Key(key)) = event::read(){
-        let action = self.key_to_action(key);
+        let action = self.key_to_action(key, false);
         if !matches!(action, Action::None){
           return action;
         }
@@ -43,7 +49,18 @@ impl InputManager{
     }
   }
 
-  fn key_to_action(&self, key: KeyEvent) -> Action{
+  fn key_to_action(&self, key: KeyEvent, text_mode: bool) -> Action{
+    if text_mode{
+      return match key.code{
+        KeyCode::Enter => Action::PickerConfirm,
+        KeyCode::Esc => Action::PickerCancel,
+        KeyCode::Backspace => Action::PickerBackspace,
+        KeyCode::Up => Action::PickerMove(-1),
+        KeyCode::Down => Action::PickerMove(1),
+        KeyCode::Char(character) => Action::PickerInput(character),
+        _ => Action::None,
+      }
+    }
     match key.code{
       KeyCode::Up | KeyCode::Char('k') => Action::Move(0, -1),
       KeyCode::Down | KeyCode::Char('j') => Action::Move(0, 1),
@@ -60,7 +77,8 @@ impl InputManager{
       KeyCode::Char('.') => Action::Wait,
       KeyCode::Char('o') | KeyCode::Char('O') => Action::Explore,
       KeyCode::Char('D') => Action::GenerateDungeon,
-      KeyCode::Char('M') => Action::SpawnTestEnemy,
+      KeyCode::Char('M') => Action::OpenMonsterPicker,
+      KeyCode::Char('R') => Action::ResetArena,
 
       _ => Action::None,
     }
@@ -76,7 +94,7 @@ mod tests{
   fn auto_explore_accepts_lowercase_and_uppercase_o(){
     let input = InputManager::new();
     for key in ['o', 'O']{
-      let action = input.key_to_action(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE));
+      let action = input.key_to_action(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE), false);
       assert!(matches!(action, Action::Explore));
     }
   }

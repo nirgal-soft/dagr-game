@@ -5,13 +5,17 @@ Choose **Combat Arena** from the main menu to enter a persistent, fully visible
 enemies do not leak into the generated Wilderness and can later retain wounds
 across restarts.
 
-In **Play game** or the arena, press `M` while inside a Wilderness or dungeon to create one
-persistent `core:goblin` test enemy on a nearby walkable tile. The enemy is
-rendered only in line-of-sight, blocks movement, and is rehydrated at the same
-location and tile after restart. Repeating `M` in the same area does not create
-a duplicate. This is an enemy-instantiation test; combat and AI are intentionally
-not part of this slice. Press `o` or `O` to auto-explore a local area; this also
-dismisses any open discovery or enemy popup so exploration starts immediately.
+In **Play game** or the arena, press `M` to open the monster picker. Type any
+subsequence of a monster name or stable key, use `↑`/`↓` to select, and press
+`Enter` to instantiate it on a nearby walkable tile. `Esc` cancels. The picker
+reads the loaded bestiary, so new content-pack monsters appear without client
+code changes.
+
+In the arena, moving into a monster exchanges one Whitehack-style attack and one
+retaliation. HP, wounds, defeat, and tile positions persist. Press `R` to clear
+positioned arena monsters and restore the arena fighter to full HP. Press `o` or
+`O` to auto-explore other local areas; this also dismisses an open discovery or
+enemy popup so exploration starts immediately.
 
 ## Engine Workbench
 

@@ -17,6 +17,7 @@ impl Drop for TerminalGuard {
 }
 mod areas;
 mod camera;
+mod combat;
 mod debug_scenario;
 mod debug_tui;
 mod errors;
@@ -126,6 +127,7 @@ async fn run_game(
 
   let mut game_state = game_state::GameState::new(
     entity_manager,
+    pool.clone(),
     view_w,
     view_h,
     wilderness_layout,
@@ -156,7 +158,7 @@ async fn run_game(
     }
     std::thread::sleep(std::time::Duration::from_millis(16));
 
-    match input.poll_input(){
+    match input.poll_input(game_state.combat.picker_is_open()){
       Action::Quit => break,
       Action::Wait => std::thread::sleep(std::time::Duration::from_millis(16)),
       Action::Dismiss => {
@@ -193,8 +195,32 @@ async fn run_game(
         game_state.update_visibility();
         needs_refresh = true;
       },
-      Action::SpawnTestEnemy => {
-        game_state.spawn_test_enemy().await?;
+      Action::OpenMonsterPicker => {
+        game_state.open_monster_picker().await?;
+        needs_refresh = true;
+      },
+      Action::ResetArena => {
+        game_state.reset_combat_arena().await?;
+        needs_refresh = true;
+      },
+      Action::PickerConfirm => {
+        game_state.spawn_selected_monster().await?;
+        needs_refresh = true;
+      },
+      Action::PickerCancel => {
+        game_state.combat.close_picker();
+        needs_refresh = true;
+      },
+      Action::PickerBackspace => {
+        game_state.combat.picker_backspace();
+        needs_refresh = true;
+      },
+      Action::PickerMove(delta) => {
+        game_state.combat.picker_move(delta);
+        needs_refresh = true;
+      },
+      Action::PickerInput(character) => {
+        game_state.combat.picker_input(character);
         needs_refresh = true;
       },
       _ => {},
