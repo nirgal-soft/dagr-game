@@ -6,15 +6,26 @@ the main menu.
 The console can:
 
 - List the complete engine tool catalog and JSON schemas
-- Inspect canonical GM, NPC, or Faction actor context
+- Browse GM, NPC, and Faction actors by name instead of memorizing IDs
+- Inspect canonical actor context, including creative GM state
 - Invoke any tool allowed for a bound actor scope using guided fields or raw JSON
 - Recover from invalid menu choices, IDs, tool names, and arguments without exiting
-- Display the structured result, refreshed context, and persisted engine events
+- Display the structured result, changed context sections, and persisted events
 - Create a demo NPC/Faction/Front scenario with IDs ready for testing
 
 The guided mode prompts for each field in the tool schema and validates basic
 value types. Raw JSON mode remains available for copy/paste and advanced testing;
 invalid input can be corrected or cancelled with `:back`.
+
+Creative GM tools can frame scenes, apply batches of facts/abilities/decisions,
+introduce new Front Dangers, and resolve attempts or player decisions. Nested
+effect arrays are easiest to paste through raw JSON mode.
+
+Example creative GM effect batch:
+
+```json
+{"summary":"Make the gate matter","effects":[{"type":"establish_fact","subject":"The eastern gate","assertion":"It opens only for someone carrying funeral ash","visibility":"public"},{"type":"offer_decision","prompt":"Who carries the ash?","options":["Amleth","Beatrice"],"stakes":"The gate marks whoever enters first"}]}
+```
 
 Example NPC relationship arguments:
 

@@ -3,11 +3,11 @@ use std::sync::Arc;
 use anyhow::Result;
 use dagr_lib::{
   agency::{
-    events::{load_actor_events, ActorScope},
+    events::{load_actor_events, ActorScope, EngineEvent},
     factions::{CreateFaction, CreateFactionMember, FactionService},
     npcs::{CreateNpcProfile, Motivation, NpcAgencyService},
     runner::ActorContextBuilder,
-    ToolCall, ToolInvocation, ToolRouter,
+    load_actor_directory, ToolCall, ToolInvocation, ToolRouter,
   },
   archetypes::characters::character::NPCTypeData,
   campaign::fronts::{CreateDanger, CreateFront, FrontService, FrontType},
@@ -46,7 +46,7 @@ pub async fn run(pool: Arc<PgPool>) -> Result<()>{
         }
       }
       "2" => {
-        if let Some(actor) = prompt_actor()?{
+        if let Some(actor) = prompt_actor(pool.as_ref()).await?{
           match contexts.build(actor).await{
             Ok(context) => print_json("Actor context", &context)?,
             Err(error) => println!("Unable to build context: {error:#}"),
@@ -103,7 +103,7 @@ async fn invoke_tool(
   contexts: &ActorContextBuilder,
   pool: &PgPool,
 ) -> Result<()>{
-  let Some(actor) = prompt_actor()? else{return Ok(())};
+  let Some(actor) = prompt_actor(pool).await? else{return Ok(())};
   let definitions = router.definitions(actor);
   if definitions.is_empty(){
     println!("No tools are available for this actor scope.");
@@ -112,12 +112,13 @@ async fn invoke_tool(
   }
   println!("Available tools:");
   for (index, tool) in definitions.iter().enumerate(){
-    println!("  {}. {} - {}", index + 1, tool.name, tool.description);
-    println!("     {}", serde_json::to_string(&tool.input_schema)?);
+    println!("  {}. {}", index + 1, tool.name);
+    println!("     {}", tool.description);
   }
   let Some(tool_index) = prompt_tool(&definitions)? else{return Ok(())};
   let tool = &definitions[tool_index];
   let Some(input) = prompt_arguments(tool)? else{return Ok(())};
+  let before = contexts.build(actor).await.ok();
   let invocation = ToolInvocation{
     actor,
     call: ToolCall{
@@ -130,30 +131,61 @@ async fn invoke_tool(
   print_json("Tool result", &serde_json::to_value(&result)?)?;
   if result.success{
     match contexts.build(actor).await{
-      Ok(context) => print_json("Refreshed actor context", &context)?,
+      Ok(context) => {
+        if let Some(before) = before.as_ref(){
+          print_context_diff(before, &context)?;
+        }else{
+          print_json("Refreshed actor context", &context)?;
+        }
+      }
       Err(error) => println!("Unable to refresh actor context: {error:#}"),
     }
     let events = load_actor_events(pool, actor).await?;
-    print_json("Persisted consequences", &serde_json::to_value(events)?)?;
+    print_event_timeline("Recent persisted consequences", &events)?;
   }
   pause()
 }
 
 async fn view_events(pool: &PgPool) -> Result<()>{
-  let Some(actor) = prompt_actor()? else{return Ok(())};
+  let Some(actor) = prompt_actor(pool).await? else{return Ok(())};
   let events = load_actor_events(pool, actor).await?;
-  print_json("Recent actor events", &serde_json::to_value(events)?)?;
+  print_event_timeline("Recent actor events", &events)?;
   pause()
 }
 
-fn prompt_actor() -> Result<Option<ActorScope>>{
+async fn prompt_actor(pool: &PgPool) -> Result<Option<ActorScope>>{
+  match load_actor_directory(pool).await{
+    Ok(entries) => loop{
+      println!();
+      println!("Actor browser:");
+      for (index, entry) in entries.iter().enumerate(){
+        println!("  {}. {} — {}", index + 1, entry.name, entry.summary);
+      }
+      println!("  m. Enter an actor ID manually");
+      println!("  b. Back");
+      let input = prompt("Actor: ")?;
+      match input.trim().to_ascii_lowercase().as_str(){
+        "m" | "manual" => return prompt_actor_manual(),
+        "b" | "back" | "cancel" => return Ok(None),
+        value => match value.parse::<usize>().ok().and_then(|index| index.checked_sub(1))
+          .and_then(|index| entries.get(index)){
+            Some(entry) => return Ok(Some(entry.actor)),
+            None => println!("Unknown actor. Choose a displayed number, m, or b."),
+          }
+      }
+    },
+    Err(error) => {
+      println!("Actor directory is unavailable: {error:#}");
+      println!("Falling back to manual actor selection.");
+      prompt_actor_manual()
+    }
+  }
+}
+
+fn prompt_actor_manual() -> Result<Option<ActorScope>>{
   loop{
     println!();
-    println!("Actor scope:");
-    println!("  1. GM");
-    println!("  2. NPC");
-    println!("  3. Faction");
-    println!("  b. Back");
+    println!("Manual actor scope: 1 = GM, 2 = NPC, 3 = Faction, b = back");
     match prompt("Scope: ")?.trim().to_ascii_lowercase().as_str(){
       "1" | "g" | "gm" => return Ok(Some(ActorScope::Gm)),
       "2" | "n" | "npc" => {
@@ -287,6 +319,37 @@ fn prompt_json_arguments() -> Result<Option<Value>>{
       Err(error) => println!("Invalid JSON: {error}. Correct it or enter :back."),
     }
   }
+}
+
+fn print_event_timeline(label: &str, events: &[EngineEvent]) -> Result<()>{
+  println!("\n{label}:");
+  if events.is_empty(){
+    println!("  No events yet.");
+    return Ok(())
+  }
+  let start = events.len().saturating_sub(10);
+  for event in &events[start..]{
+    println!("\n  #{}  {}", event.id, event.event_type);
+    let payload = serde_json::to_string_pretty(&event.payload)?;
+    for line in payload.lines(){println!("    {line}")}
+  }
+  Ok(())
+}
+
+fn print_context_diff(before: &Value, after: &Value) -> Result<()>{
+  println!("\nCanonical state changes:");
+  let mut changed = false;
+  if let (Some(before), Some(after)) = (before.as_object(), after.as_object()){
+    for (key, new_value) in after{
+      if before.get(key) != Some(new_value){
+        changed = true;
+        println!("\n  {key}:");
+        println!("{}", serde_json::to_string_pretty(new_value)?);
+      }
+    }
+  }
+  if !changed{println!("  No materialized context changed; the audit event is the canonical consequence.")}
+  Ok(())
 }
 
 fn print_json(label: &str, value: &Value) -> Result<()>{
