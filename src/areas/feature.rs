@@ -26,8 +26,11 @@ impl Feature{
   pub const WALL: Self = Self::new('#', Color::White, false, true)
     .with_bg(Color::Rgb{r: 40, g: 35, b: 30});
   pub const TREE: Self = Self::new('T', Color::DarkGreen, false, true);
+  pub const BRUSH: Self = Self::new('"', Color::Green, true, false);
   pub const ROCK: Self = Self::new('o', Color::Grey, false, true);
+  pub const RUBBLE: Self = Self::new(':', Color::DarkGrey, true, false);
   pub const WATER: Self = Self::new('~', Color::Blue, false, false);
+  pub const TRAIL: Self = Self::new('·', Color::DarkYellow, true, false);
   pub const LANDMARK: Self = Self::new('*', Color::Yellow, true, false);
   pub const STAIRS_UP: Self = Self::new('<', Color::Yellow, true, false)
     .with_bg(Color::Rgb{r: 50, g: 40, b: 20});

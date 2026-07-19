@@ -17,7 +17,7 @@ impl LocationConfig {
       },
       LocationType::Wilderness => Self {
         ground: Ground::WILDERNESS,
-        has_fov: false,
+        has_fov: true,
         has_levels: false,
       },
       _ => Self {

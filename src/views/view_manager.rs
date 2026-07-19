@@ -451,7 +451,9 @@ impl ViewManager {
     if let TransitionOutcome::Ok(ref mut transition) = outcome {
       transition.player_pos = arrival;
       if let Some(area) = self.current_area_mut() {
-        area.remove_feature(arrival.0, arrival.1);
+        if !area.is_walkable(arrival.0, arrival.1) {
+          area.remove_feature(arrival.0, arrival.1);
+        }
       }
     }
     Ok(outcome)

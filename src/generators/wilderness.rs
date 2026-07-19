@@ -85,23 +85,39 @@ impl WildernessGenerator {
 
   fn paint_vegetation(&self, area: &mut Area, rng: &mut StdRng) {
     let scale = ((area.width * area.height) / 1200).max(1);
-    let (blobs, steps, brush) = match self.profile.vegetation {
+    let (blobs, steps, brush): (i32, i32, i32) = match self.profile.vegetation {
       Vegetation::DenseForest => (scale * 4, 28, 2),
       Vegetation::LightForest => (scale * 3, 20, 2),
       Vegetation::Grassland => (scale, 10, 1),
       Vegetation::Barren => (0, 0, 0),
     };
+    paint_blobs(
+      area,
+      rng,
+      Feature::BRUSH,
+      blobs,
+      steps + 8,
+      brush.saturating_add(1),
+    );
     paint_blobs(area, rng, Feature::TREE, blobs, steps, brush);
   }
 
   fn paint_terrain(&self, area: &mut Area, rng: &mut StdRng) {
     let scale = ((area.width * area.height) / 1400).max(1);
-    let (blobs, steps, brush) = match self.profile.terrain {
+    let (blobs, steps, brush): (i32, i32, i32) = match self.profile.terrain {
       Terrain::Mountains => (scale * 4, 24, 2),
       Terrain::Hills => (scale * 2, 16, 2),
       Terrain::Plains => (scale, 7, 1),
       Terrain::Swamp => (scale, 8, 1),
     };
+    paint_blobs(
+      area,
+      rng,
+      Feature::RUBBLE,
+      blobs,
+      steps + 5,
+      brush.saturating_add(1),
+    );
     paint_blobs(area, rng, Feature::ROCK, blobs, steps, brush);
   }
 
@@ -138,7 +154,16 @@ impl WildernessGenerator {
   fn carve_routes(&self, area: &mut Area, rng: &mut StdRng) {
     let center = (area.width / 2, area.height / 2);
     for gate in edge_gates(area.width, area.height) {
-      carve_winding_path(area, rng, center, gate);
+      let mut waypoint = ((center.0 + gate.0) / 2, (center.1 + gate.1) / 2);
+      if gate.0 == 0 || gate.0 == area.width - 1 {
+        let wander = (area.height / 8).max(1);
+        waypoint.1 = (waypoint.1 + rng.random_range(-wander..=wander)).clamp(1, area.height - 2);
+      } else {
+        let wander = (area.width / 8).max(1);
+        waypoint.0 = (waypoint.0 + rng.random_range(-wander..=wander)).clamp(1, area.width - 2);
+      }
+      carve_winding_path(area, rng, center, waypoint);
+      carve_winding_path(area, rng, waypoint, gate);
     }
   }
 
@@ -222,7 +247,7 @@ fn edge_gates(width: i32, height: i32) -> [Pos; 4] {
 
 fn carve_winding_path(area: &mut Area, rng: &mut StdRng, from: Pos, to: Pos) {
   let mut cursor = from;
-  area.remove_feature(cursor.0, cursor.1);
+  area.set_feature(cursor.0, cursor.1, Feature::TRAIL);
   while cursor != to {
     let move_x = cursor.0 != to.0;
     let move_y = cursor.1 != to.1;
@@ -237,7 +262,7 @@ fn carve_winding_path(area: &mut Area, rng: &mut StdRng, from: Pos, to: Pos) {
     } else {
       cursor.1 += (to.1 - cursor.1).signum();
     }
-    area.remove_feature(cursor.0, cursor.1);
+    area.set_feature(cursor.0, cursor.1, Feature::TRAIL);
   }
 }
 

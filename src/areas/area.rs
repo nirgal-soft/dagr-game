@@ -314,6 +314,17 @@ mod tests {
   }
 
   #[test]
+  fn wilderness_uses_local_field_of_view() {
+    let mut area = Area::wilderness(30, 30);
+    assert!(area.has_fov());
+    assert!(!area.is_visible(15, 15));
+    area.update_visibility(15, 15);
+    assert!(area.is_visible(15, 15));
+    assert!(area.is_visible(18, 15));
+    assert!(!area.is_visible(29, 29));
+  }
+
+  #[test]
   fn walls_block_and_stairs_are_walkable() {
     let mut area = Area::dungeon(10, 10);
     area.set_wall(2, 2);
