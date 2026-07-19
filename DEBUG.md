@@ -15,7 +15,9 @@ In the arena, moving into a monster exchanges one Whitehack-style attack and one
 retaliation. The arena fighter is a durable level-5 Strong test fixture. HP,
 wounds, defeat, and tile positions persist, while dice outcomes accumulate in
 the non-modal **Combat rolls** panel. Press `R` to clear positioned arena
-monsters and restore the arena fighter to full HP. Press `o` or
+monsters and restore the arena fighter to full HP. Arena monsters notice the
+fighter within eight tiles, advance one tile after each player action, and attack
+when adjacent. Press `.` to wait and exercise enemy turns directly. Press `o` or
 `O` to auto-explore other local areas; this also dismisses an open discovery or
 enemy popup so exploration starts immediately.
 

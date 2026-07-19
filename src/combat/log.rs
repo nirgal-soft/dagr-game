@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use dagr_lib::combat::{AttackResult, CombatExchange};
+use dagr_lib::combat::{AttackResult, CombatStrike};
 
 const MAX_LINES: usize = 12;
 
@@ -10,16 +10,17 @@ pub struct CombatLog{
 }
 
 impl CombatLog{
-  pub fn record_exchange(&mut self, enemy:&str, report:&CombatExchange){
-    self.push(format_attack("You",&report.attack));
-    match &report.retaliation{
-      Some(result) => self.push(format_attack(enemy,result)),
-      None => self.push(format!("{enemy} is defeated.")),
-    }
-    if report.attacker_defeated{
+  pub fn record_player_attack(&mut self,enemy:&str,strike:&CombatStrike){
+    self.push(format_attack("You",&strike.attack));
+    if strike.defender_defeated{self.push(format!("{enemy} is defeated."))}
+  }
+
+  pub fn record_enemy_attack(&mut self,enemy:&str,strike:&CombatStrike){
+    self.push(format_attack(enemy,&strike.attack));
+    if strike.defender_defeated{
       self.push("You are down. Press R to reset the arena.");
     }else{
-      self.push(format!("Your HP: {}",report.attacker_hp));
+      self.push(format!("Your HP: {}",strike.defender_hp));
     }
   }
 

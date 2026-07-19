@@ -10,6 +10,7 @@ use hecs::Entity;
 use sqlx::PgPool;
 
 use super::{
+  ai,
   controller,
   log::CombatLog,
   picker::{MonsterChoice, MonsterPicker},
@@ -34,8 +35,11 @@ impl CombatSession{
   pub fn picker_is_open(&self) -> bool{self.picker.is_some()}
   pub fn log_lines(&self,count:usize)->Vec<String>{self.log.recent(count)}
   pub fn log(&mut self,line:impl Into<String>){self.log.push(line)}
-  pub fn record_exchange(&mut self,enemy:&str,report:&dagr_lib::combat::CombatExchange){
-    self.log.record_exchange(enemy,report)
+  pub fn record_player_attack(&mut self,enemy:&str,strike:&dagr_lib::combat::CombatStrike){
+    self.log.record_player_attack(enemy,strike)
+  }
+  pub fn record_enemy_attack(&mut self,enemy:&str,strike:&dagr_lib::combat::CombatStrike){
+    self.log.record_enemy_attack(enemy,strike)
   }
 
   pub async fn enter_arena(
@@ -62,6 +66,24 @@ impl CombatSession{
       player::move_to(manager,&self.pool,entity,destination).await?;
     }
     Ok(())
+  }
+
+  pub async fn advance_enemies(
+    &mut self,
+    manager:&EntityManager,
+    area:&crate::areas::Area,
+    location_id:LocationId,
+    player_pos:(i32,i32),
+  )->Result<bool>{
+    let Some(player)=self.player else{return Ok(false)};
+    let report=ai::run_turns(
+      self.pool.clone(),manager,area,location_id,player,player_pos,
+    ).await?;
+    let acted=report.moved || !report.attacks.is_empty();
+    for (enemy,strike) in report.attacks{
+      self.log.record_enemy_attack(&enemy,&strike);
+    }
+    Ok(acted)
   }
 
   pub async fn reset_arena(

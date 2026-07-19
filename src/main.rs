@@ -160,7 +160,10 @@ async fn run_game(
 
     match input.poll_input(game_state.combat.picker_is_open()){
       Action::Quit => break,
-      Action::Wait => std::thread::sleep(std::time::Duration::from_millis(16)),
+      Action::Wait => {
+        game_state.wait_turn().await?;
+        needs_refresh = true;
+      },
       Action::Dismiss => {
         if game_state.popup_message.is_some(){
           game_state.dismiss_popup();

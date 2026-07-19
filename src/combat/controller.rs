@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use dagr_lib::{
-  combat::{CombatExchange, CombatService},
+  combat::{CombatService, CombatStrike},
   components::{
     characters::{character::Character, position::CharacterPosition},
     monsters::monster_stats::MonsterStats,
@@ -77,33 +77,38 @@ pub async fn reset_arena(
   Ok(())
 }
 
-pub async fn exchange(
-  pool: Arc<PgPool>,
-  manager: &EntityManager,
-  player: Entity,
-  enemy: EnemyAtTile,
-) -> Result<(CombatExchange, String)>{
-  let player_id=character_id(manager,player)?;
-  let report=CombatService::new(pool).exchange(player_id,enemy.character_id).await?;
-  synchronize(manager,player,enemy.entity,&report)?;
-  Ok((report,enemy.name))
-}
-
-fn synchronize(
+pub async fn player_attack(
+  pool:Arc<PgPool>,
   manager:&EntityManager,
   player:Entity,
-  enemy:Entity,
-  report:&CombatExchange,
-)->Result<()>{
-  let world=manager.world();
-  let mut world=world.lock().map_err(|_| anyhow!("ECS world lock is poisoned"))?;
-  replace_hp(&mut world,player,report.attacker_hp)?;
-  replace_hp(&mut world,enemy,report.defender_hp)?;
-  if report.defender_defeated{
-    world.remove_one::<CharacterPosition>(enemy)
-      .map_err(|_| anyhow!("defeated enemy position disappeared"))?;
+  enemy:EnemyAtTile,
+)->Result<(CombatStrike,String)>{
+  let player_id=character_id(manager,player)?;
+  let strike=CombatService::new(pool).strike(player_id,enemy.character_id).await?;
+  {
+    let world=manager.world();
+    let mut world=world.lock().map_err(|_|anyhow!("ECS world lock is poisoned"))?;
+    replace_hp(&mut world,enemy.entity,strike.defender_hp)?;
+    if strike.defender_defeated{
+      world.remove_one::<CharacterPosition>(enemy.entity)
+        .map_err(|_|anyhow!("defeated enemy position disappeared"))?;
+    }
   }
-  Ok(())
+  Ok((strike,enemy.name))
+}
+
+pub async fn enemy_attack(
+  pool:Arc<PgPool>,
+  manager:&EntityManager,
+  enemy:&EnemyAtTile,
+  player:Entity,
+)->Result<CombatStrike>{
+  let player_id=character_id(manager,player)?;
+  let strike=CombatService::new(pool).strike(enemy.character_id,player_id).await?;
+  let world=manager.world();
+  let mut world=world.lock().map_err(|_|anyhow!("ECS world lock is poisoned"))?;
+  replace_hp(&mut world,player,strike.defender_hp)?;
+  Ok(strike)
 }
 
 fn replace_hp(world:&mut hecs::World,entity:Entity,current_hp:i32)->Result<()>{

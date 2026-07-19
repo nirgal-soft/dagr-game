@@ -241,13 +241,14 @@ impl GameState {
       }
       if let Some(enemy) = self.enemy_at(new_x, new_y) {
         if let Some(player) = self.combat.player() {
-          let (report,enemy_name) = controller::exchange(
+          let (strike,enemy_name) = controller::player_attack(
             self.combat.pool(),
             &self.entity_manager,
             player,
             enemy,
           ).await?;
-          self.combat.record_exchange(&enemy_name,&report);
+          self.combat.record_player_attack(&enemy_name,&strike);
+          self.advance_enemies().await?;
         }else{
           self.show_popup(format!("{} blocks your way.",enemy.name));
         }
@@ -261,6 +262,7 @@ impl GameState {
         self.player_x = new_x;
         self.player_y = new_y;
         self.camera.center_on(new_x, new_y);
+        self.advance_enemies().await?;
       }
       return Ok(())
     }
@@ -297,6 +299,21 @@ impl GameState {
         _ => {}
       }
     }
+    Ok(())
+  }
+
+  pub async fn wait_turn(&mut self) -> Result<()> {
+    self.advance_enemies().await
+  }
+
+  async fn advance_enemies(&mut self) -> Result<()> {
+    if !self.is_combat_arena(){return Ok(())}
+    let Some(location_id)=self.current_location_id() else{return Ok(())};
+    let Some(area)=self.view_manager.current_area() else{return Ok(())};
+    let acted=self.combat.advance_enemies(
+      &self.entity_manager,area,location_id,(self.player_x,self.player_y),
+    ).await?;
+    if acted{self.cancel_navigation();}
     Ok(())
   }
 
