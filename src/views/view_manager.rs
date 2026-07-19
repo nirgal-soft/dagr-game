@@ -511,8 +511,14 @@ impl ViewManager {
         let location = entity_manager.get_component::<Location, _>(entity)?.get();
         let spatial = entity_manager.get_component::<Spatial, _>(entity)?.get();
         let seed = location.get_seed().unwrap_or(0) as u64;
-        let mut area =
-          WildernessGenerator::new(seed).generate(spatial.get_width(), spatial.get_length())?;
+        let generator = location
+          .get_parent_location_id()?
+          .and_then(|parent| entity_manager.find_entity_by_location_id::<Hex>(parent))
+          .and_then(|hex| entity_manager.get_component::<Hex, _>(hex).ok())
+          .map(|hex| WildernessGenerator::for_hex(seed, &hex.get()))
+          .transpose()?
+          .unwrap_or_else(|| WildernessGenerator::new(seed));
+        let mut area = generator.generate(spatial.get_width(), spatial.get_length())?;
         let entrance = area.entrance.unwrap_or((area.width / 2, area.height / 2));
         area.set_stairs_down(entrance.0, entrance.1);
 

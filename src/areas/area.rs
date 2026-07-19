@@ -56,6 +56,9 @@ impl Area {
   }
 
   //---accessors and mutators---
+  pub fn set_ground(&mut self, ground: Ground) {
+    self.ground = ground;
+  }
   pub fn set_current_level(&mut self, level: i32) {
     self.current_level = Some(level);
   }
