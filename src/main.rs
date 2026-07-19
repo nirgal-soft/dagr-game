@@ -17,10 +17,12 @@ impl Drop for TerminalGuard {
 }
 mod areas;
 mod camera;
+mod debug_menu;
 mod errors;
 mod game_state;
 mod generators;
 mod input;
+mod menu;
 mod navigation;
 mod pathfinding;
 mod region_gen;
@@ -63,6 +65,18 @@ async fn run() -> Result<()>{
     .unwrap_or_else(|_| "0".to_string())
     .parse::<u64>()?;
   let pool = Arc::new(connection::establish_connection().await?);
+
+  loop{
+    match menu::show_main_menu()?{
+      menu::MainMenuChoice::Play => run_game(pool.clone(), world_seed).await?,
+      menu::MainMenuChoice::DebugTools => debug_menu::run(pool.clone()).await?,
+      menu::MainMenuChoice::Quit => break,
+    }
+  }
+  Ok(())
+}
+
+async fn run_game(pool: Arc<sqlx::PgPool>, world_seed: u64) -> Result<()>{
   let world = Arc::new(Mutex::new(World::new()));
   let registry = Arc::new(
     build_factor_registry(AppConfig{
