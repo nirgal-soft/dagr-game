@@ -78,7 +78,7 @@ impl Renderer{
         game_state.get_location_tile(world_x,world_y)
       };
       if game_state.look_cursor()==Some((world_x,world_y)){
-        tile=Some(tile.unwrap_or_else(||Tile::new(' ',Color::White)).with_bg(Color::DarkBlue));
+        tile=Some(tile.unwrap_or_else(||Tile::new(' ',Color::White)).inverted());
       }
       tile
     })?;

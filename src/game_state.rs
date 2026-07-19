@@ -597,7 +597,7 @@ impl GameState {
     if let Some(mode)=self.look_mode.as_mut(){
       mode.move_by(dx,dy,(area.width,area.height));
       let cursor=mode.cursor();
-      self.camera.center_on(cursor.0,cursor.1);
+      self.camera.pan_when_border_reached(cursor.0,cursor.1);
     }
   }
 

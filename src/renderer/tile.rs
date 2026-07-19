@@ -25,6 +25,11 @@ impl Tile{
     self
   }
 
+  pub fn inverted(mut self)->Self{
+    std::mem::swap(&mut self.fg,&mut self.bg);
+    self
+  }
+
   pub fn with_visibility(&self, visibility: Visibility, config: &RenderConfig) -> Tile{
     match visibility{
       Visibility::Unseen => Tile{
@@ -49,5 +54,18 @@ impl Tile{
       Ok(Terrain::Swamp) => Tile::new('"', Color::DarkYellow).with_bg(Color::Rgb{r: 30, g: 50, b: 30}),
       Err(_) => Tile::new('?', Color::Magenta),
     }
+  }
+}
+
+#[cfg(test)]
+mod tests{
+  use super::*;
+
+  #[test]
+  fn inverted_tile_swaps_foreground_and_background(){
+    let tile=Tile::new('=',Color::Yellow).with_bg(Color::Blue).inverted();
+    assert_eq!(tile.fg,Color::Blue);
+    assert_eq!(tile.bg,Color::Yellow);
+    assert_eq!(tile.symbol,'=');
   }
 }
