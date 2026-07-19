@@ -17,7 +17,8 @@ impl Drop for TerminalGuard {
 }
 mod areas;
 mod camera;
-mod debug_menu;
+mod debug_scenario;
+mod debug_tui;
 mod errors;
 mod game_state;
 mod generators;
@@ -69,7 +70,7 @@ async fn run() -> Result<()>{
   loop{
     match menu::show_main_menu()?{
       menu::MainMenuChoice::Play => run_game(pool.clone(), world_seed).await?,
-      menu::MainMenuChoice::DebugTools => debug_menu::run(pool.clone()).await?,
+      menu::MainMenuChoice::DebugTools => debug_tui::run(pool.clone()).await?,
       menu::MainMenuChoice::Quit => break,
     }
   }
