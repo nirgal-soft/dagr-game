@@ -68,7 +68,7 @@ async fn run() -> Result<()>{
   let pool = Arc::new(connection::establish_connection().await?);
 
   loop{
-    match menu::show_main_menu()?{
+    match menu::show_main_menu(world_seed)?{
       menu::MainMenuChoice::Play => run_game(pool.clone(), world_seed).await?,
       menu::MainMenuChoice::DebugTools => debug_tui::run(pool.clone()).await?,
       menu::MainMenuChoice::Quit => break,
