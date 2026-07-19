@@ -7,9 +7,14 @@ The console can:
 
 - List the complete engine tool catalog and JSON schemas
 - Inspect canonical GM, NPC, or Faction actor context
-- Invoke any tool allowed for a bound actor scope
+- Invoke any tool allowed for a bound actor scope using guided fields or raw JSON
+- Recover from invalid menu choices, IDs, tool names, and arguments without exiting
 - Display the structured result, refreshed context, and persisted engine events
 - Create a demo NPC/Faction/Front scenario with IDs ready for testing
+
+The guided mode prompts for each field in the tool schema and validates basic
+value types. Raw JSON mode remains available for copy/paste and advanced testing;
+invalid input can be corrected or cancelled with `:back`.
 
 Example NPC relationship arguments:
 
