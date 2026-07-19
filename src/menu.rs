@@ -19,6 +19,7 @@ use ratatui::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MainMenuChoice {
   Play,
+  CombatArena,
   DebugTools,
   Quit,
 }
@@ -32,13 +33,20 @@ struct MenuEntry {
   detail: &'static str,
 }
 
-const ENTRIES: [MenuEntry; 3] = [
+const ENTRIES: [MenuEntry; 4] = [
   MenuEntry {
     choice: MainMenuChoice::Play,
     key: "P",
     title: "ENTER THE WORLD",
     subtitle: "Continue into the roguelike reference client",
     detail: "Explore the persistent world, move between areas, and exercise the playable client as it grows.",
+  },
+  MenuEntry {
+    choice: MainMenuChoice::CombatArena,
+    key: "A",
+    title: "COMBAT ARENA",
+    subtitle: "Enter the persistent stone-circle test ground",
+    detail: "Spawn combatants, exercise simple procedures, and build the combat loop without disturbing the ordinary world.",
   },
   MenuEntry {
     choice: MainMenuChoice::DebugTools,
@@ -98,10 +106,13 @@ pub fn show_main_menu(world_seed: u64) -> Result<MainMenuChoice> {
       KeyCode::Char('1') | KeyCode::Char('p') | KeyCode::Char('P') => {
         return Ok(MainMenuChoice::Play);
       }
-      KeyCode::Char('2') | KeyCode::Char('d') | KeyCode::Char('D') => {
+      KeyCode::Char('2') | KeyCode::Char('a') | KeyCode::Char('A') => {
+        return Ok(MainMenuChoice::CombatArena);
+      }
+      KeyCode::Char('3') | KeyCode::Char('d') | KeyCode::Char('D') => {
         return Ok(MainMenuChoice::DebugTools);
       }
-      KeyCode::Char('3') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
+      KeyCode::Char('4') | KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
         return Ok(MainMenuChoice::Quit);
       }
       KeyCode::Char('?') => help = true,
@@ -325,12 +336,13 @@ mod tests {
   use super::*;
   #[test]
   fn menu_navigation_wraps() {
-    assert_eq!(next(2, 3), 0);
-    assert_eq!(previous(0, 3), 2);
+    assert_eq!(next(3, 4), 0);
+    assert_eq!(previous(0, 4), 3);
   }
   #[test]
   fn menu_choices_are_distinct() {
-    assert_ne!(MainMenuChoice::Play, MainMenuChoice::DebugTools);
+    assert_ne!(MainMenuChoice::Play, MainMenuChoice::CombatArena);
+    assert_ne!(MainMenuChoice::CombatArena, MainMenuChoice::DebugTools);
     assert_ne!(MainMenuChoice::DebugTools, MainMenuChoice::Quit);
   }
 }

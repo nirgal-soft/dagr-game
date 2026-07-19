@@ -55,7 +55,7 @@ async fn main(){
       std::process::exit(1);
     }
   };
- 
+
   if let Err(e) = run().await{
     error!("Fatal error: {:#}", e);
     eprintln!("Fatal error: {:#}", e);
@@ -72,7 +72,8 @@ async fn run() -> Result<()>{
 
   loop{
     match menu::show_main_menu(world_seed)?{
-      menu::MainMenuChoice::Play => run_game(pool.clone(), world_seed, wilderness_layout).await?,
+      menu::MainMenuChoice::Play => run_game(pool.clone(), world_seed, wilderness_layout, false).await?,
+      menu::MainMenuChoice::CombatArena => run_game(pool.clone(), world_seed, wilderness_layout, true).await?,
       menu::MainMenuChoice::DebugTools => run_debug_tools(pool.clone()).await?,
       menu::MainMenuChoice::Quit => break,
     }
@@ -93,6 +94,7 @@ async fn run_game(
   pool: Arc<sqlx::PgPool>,
   world_seed: u64,
   wilderness_layout: wilderness_layout::WildernessLayout,
+  start_in_combat_arena: bool,
 ) -> Result<()>{
   let world = Arc::new(Mutex::new(World::new()));
   let registry = Arc::new(
@@ -132,6 +134,9 @@ async fn run_game(
   game_state.player_x = 0;
   game_state.player_y = 0;
   game_state.ensure_starting_hex().await?;
+  if start_in_combat_arena{
+    game_state.enter_combat_arena().await?;
+  }
   game_state.camera.center_on(game_state.player_x, game_state.player_y);
 
   let renderer = renderer::Renderer::new(w, h);

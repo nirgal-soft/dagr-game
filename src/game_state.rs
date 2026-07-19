@@ -8,13 +8,20 @@ use dagr_lib::components::{
 use dagr_lib::ems::{component::Component, entity_manager::EntityManager};
 use dagr_lib::factories::{
   characters::character::{CharacterPositionSeed, MonsterCharacterSeed},
-  world::{dungeon::DungeonSeed, hex::HexSeed},
+  world::{
+    dungeon::DungeonSeed,
+    hex::HexSeed,
+    wilderness::WildernessAreaSeed,
+  },
 };
 use dagr_lib::ids::LocationId;
 use crossterm::style::Color;
 use tracing::info;
 
 use crate::camera::Camera;
+use crate::generators::arena::{
+  COMBAT_ARENA_HEIGHT, COMBAT_ARENA_KEY, COMBAT_ARENA_WIDTH,
+};
 use crate::navigation::Navigator;
 use crate::renderer::{RenderConfig, Tile};
 use crate::views::{
@@ -67,9 +74,17 @@ impl GameState {
       "World".to_string()
     } else if let Some(level) = self.view_manager.current_level() {
       format!("Dungeon level {level}")
+    } else if self.is_combat_arena() {
+      "Combat arena".to_string()
     } else {
       "Wilderness".to_string()
     }
+  }
+
+  fn is_combat_arena(&self) -> bool {
+    self.view_manager.current_entity()
+      .and_then(|entity| self.entity_manager.get_component::<Wilderness, _>(entity).ok())
+      .is_some_and(|wilderness| wilderness.get().get_area_key() == COMBAT_ARENA_KEY)
   }
 
   pub fn coordinate_debug_lines(&self) -> Vec<String> {
@@ -275,6 +290,34 @@ impl GameState {
     if self.map.get((self.player_x, self.player_y)).is_none() {
       self.generate_hex_at(self.player_x, self.player_y).await?;
     }
+    Ok(())
+  }
+
+  pub async fn enter_combat_arena(&mut self) -> Result<()> {
+    let hex = self.map.get((0, 0))
+      .ok_or_else(|| anyhow!("starting world container is unavailable"))?;
+    let parent_location_id = self.entity_manager
+      .get_component::<Location, _>(hex)?
+      .get().get_id()?;
+    let arena = match self.entity_manager
+      .find_wilderness_area(parent_location_id, COMBAT_ARENA_KEY)
+    {
+      Some(entity) => entity,
+      None => self.entity_manager.create(WildernessAreaSeed {
+        area_key: COMBAT_ARENA_KEY.to_string(),
+        x: 10_000,
+        y: 10_000,
+        width: COMBAT_ARENA_WIDTH,
+        length: COMBAT_ARENA_HEIGHT,
+        parent_location_id: Some(parent_location_id),
+      }).await?,
+    };
+    let outcome = self.view_manager.transition(
+      TransitionIntent::Enter(arena),
+      (self.player_x, self.player_y),
+      &self.entity_manager,
+    )?;
+    self.resolve_transition(outcome).await?;
     Ok(())
   }
 

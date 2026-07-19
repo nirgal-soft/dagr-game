@@ -1,6 +1,11 @@
 # Debug and Playtest Controls
 
-In **Play game**, press `M` while inside a Wilderness or dungeon to create one
+Choose **Combat Arena** from the main menu to enter a persistent, fully visible
+31×21 stone-circle test area. It has a separate location identity, so arena
+enemies do not leak into the generated Wilderness and can later retain wounds
+across restarts.
+
+In **Play game** or the arena, press `M` while inside a Wilderness or dungeon to create one
 persistent `core:goblin` test enemy on a nearby walkable tile. The enemy is
 rendered only in line-of-sight, blocks movement, and is rehydrated at the same
 location and tile after restart. Repeating `M` in the same area does not create

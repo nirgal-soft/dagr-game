@@ -18,7 +18,11 @@ use tracing::info;
 
 use crate::areas::{Area, LocationConfig, PoiKind, PointOfInterest, Pos};
 use crate::errors::ViewError;
-use crate::generators::{dungeon::DungeonGenerator, wilderness::WildernessGenerator};
+use crate::generators::{
+  arena::{ArenaGenerator, COMBAT_ARENA_KEY},
+  dungeon::DungeonGenerator,
+  wilderness::WildernessGenerator,
+};
 use crate::seed::{LocationDiscriminator, derive_seed};
 use crate::wilderness_layout::WildernessLayout;
 
@@ -512,6 +516,10 @@ impl ViewManager {
       LocationType::Wilderness => {
         let location = entity_manager.get_component::<Location, _>(entity)?.get();
         let spatial = entity_manager.get_component::<Spatial, _>(entity)?.get();
+        let wilderness = entity_manager.get_component::<Wilderness, _>(entity)?.get();
+        if wilderness.get_area_key() == COMBAT_ARENA_KEY {
+          return Ok(ArenaGenerator::generate(spatial.get_width(), spatial.get_length()))
+        }
         let seed = location.get_seed().unwrap_or(0) as u64;
         let parent_id = location.get_parent_location_id()?.ok_or(ViewError::NoParentLocation)?;
         let parent = entity_manager
