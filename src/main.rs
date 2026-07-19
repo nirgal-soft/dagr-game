@@ -187,6 +187,10 @@ async fn run_game(
         game_state.update_visibility();
         needs_refresh = true;
       },
+      Action::SpawnTestEnemy => {
+        game_state.spawn_test_enemy().await?;
+        needs_refresh = true;
+      },
       _ => {},
     }
   }

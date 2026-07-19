@@ -8,6 +8,7 @@ pub enum Action{
   Ascend,
   Descend,
   GenerateDungeon,
+  SpawnTestEnemy,
   Dismiss,
   Explore,
   None,
@@ -59,6 +60,7 @@ impl InputManager{
       KeyCode::Char('.') => Action::Wait,
       KeyCode::Char('o') => Action::Explore,
       KeyCode::Char('D') => Action::GenerateDungeon,
+      KeyCode::Char('M') => Action::SpawnTestEnemy,
 
       _ => Action::None,
     }

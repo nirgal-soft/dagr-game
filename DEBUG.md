@@ -1,4 +1,13 @@
-# Engine Workbench
+# Debug and Playtest Controls
+
+In **Play game**, press `M` while inside a Wilderness or dungeon to create one
+persistent `core:goblin` test enemy on a nearby walkable tile. The enemy is
+rendered only in line-of-sight, blocks movement, and is rehydrated at the same
+location and tile after restart. Repeating `M` in the same area does not create
+a duplicate. This is an enemy-instantiation test; combat and AI are intentionally
+not part of this slice.
+
+## Engine Workbench
 
 Run `cargo run`, choose **Debug engine tools**, and DAGR opens a full-screen
 terminal workbench over the same `ToolRouter` used by model providers.

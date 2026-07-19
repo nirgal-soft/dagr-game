@@ -1,12 +1,17 @@
 use anyhow::{Result, anyhow};
-use dagr_lib::components::world::{
-  hex::Hex,
-  location::Location,
-  spatial::Spatial,
-  wilderness::Wilderness,
+use dagr_lib::components::{
+  characters::{character::Character, position::CharacterPosition},
+  monsters::monster_stats::MonsterStats,
+  stats::base_stats::BaseStatsData,
+  world::{hex::Hex, location::Location, spatial::Spatial, wilderness::Wilderness},
 };
 use dagr_lib::ems::{component::Component, entity_manager::EntityManager};
-use dagr_lib::factories::world::{dungeon::DungeonSeed, hex::HexSeed};
+use dagr_lib::factories::{
+  characters::character::{CharacterPositionSeed, MonsterCharacterSeed},
+  world::{dungeon::DungeonSeed, hex::HexSeed},
+};
+use dagr_lib::ids::LocationId;
+use crossterm::style::Color;
 use tracing::info;
 
 use crate::camera::Camera;
@@ -107,10 +112,100 @@ impl GameState {
   }
 
   pub fn get_location_tile(&self, x: i32, y: i32) -> Option<Tile> {
-    self
-      .view_manager
-      .current_area()
-      .and_then(|area| area.get_visible_tile(x, y, &self.render_config))
+    let area = self.view_manager.current_area()?;
+    let terrain = area.get_visible_tile(x, y, &self.render_config)?;
+    if area.is_visible(x, y) && self.enemy_name_at(x, y).is_some() {
+      return Some(Tile::new('g', Color::Red));
+    }
+    Some(terrain)
+  }
+
+  fn current_location_id(&self) -> Option<LocationId> {
+    let entity = self.view_manager.current_entity()?;
+    self.entity_manager
+      .get_component::<Location, _>(entity)
+      .ok()?
+      .get()
+      .get_id()
+      .ok()
+  }
+
+  fn enemy_name_at(&self, x: i32, y: i32) -> Option<String> {
+    let location_id = self.current_location_id()?;
+    let world = self.entity_manager.world();
+    let world = world.lock().ok()?;
+    world
+      .query::<(&Character, &MonsterStats, &CharacterPosition)>()
+      .iter()
+      .find_map(|(_, (character, _, position))| {
+        let position = position.get();
+        (position.get_location_id().ok() == Some(location_id)
+          && position.x == x
+          && position.y == y)
+          .then(|| character.get().get_name().to_string())
+      })
+  }
+
+  fn has_enemy_in_current_location(&self) -> bool {
+    let Some(location_id) = self.current_location_id() else{return false};
+    let world = self.entity_manager.world();
+    let Ok(world) = world.lock() else{return false};
+    world
+      .query::<(&MonsterStats, &CharacterPosition)>()
+      .iter()
+      .any(|(_, (_, position))| position.get().get_location_id().ok() == Some(location_id))
+  }
+
+  pub async fn spawn_test_enemy(&mut self) -> Result<()> {
+    if self.view_manager.is_in_world() {
+      self.show_popup("Enter a local area before spawning an enemy.");
+      return Ok(())
+    }
+    if self.has_enemy_in_current_location() {
+      self.show_popup("A test enemy already occupies this area.");
+      return Ok(())
+    }
+    let location_id = self
+      .current_location_id()
+      .ok_or_else(|| anyhow!("current area has no location"))?;
+    let position = {
+      let area = self
+        .view_manager
+        .current_area()
+        .ok_or_else(|| anyhow!("current area is unavailable"))?;
+      let mut found = None;
+      for radius in 2_i32..=8 {
+        for dy in -radius..=radius {
+          for dx in -radius..=radius {
+            if dx.abs() != radius && dy.abs() != radius {
+              continue
+            }
+            let candidate = (self.player_x + dx, self.player_y + dy);
+            if area.is_walkable(candidate.0, candidate.1)
+              && self.enemy_name_at(candidate.0, candidate.1).is_none()
+            {
+              found = Some(candidate);
+              break
+            }
+          }
+          if found.is_some() { break }
+        }
+        if found.is_some() { break }
+      }
+      found.ok_or_else(|| anyhow!("no nearby walkable tile can hold the test enemy"))?
+    };
+    self.entity_manager.create(MonsterCharacterSeed {
+      name: "Goblin scout".to_string(),
+      monster_type_key: "core:goblin".to_string(),
+      base_stats: BaseStatsData::default(),
+      position: Some(CharacterPositionSeed {
+        location_id,
+        x: position.0,
+        y: position.1,
+      }),
+    }).await?;
+    self.show_popup("A goblin scout appears nearby.");
+    Ok(())
   }
 
   pub async fn move_player(&mut self, dx: i32, dy: i32) -> Result<()> {
@@ -129,6 +224,10 @@ impl GameState {
 
     let Some(area) = self.view_manager.current_area() else{return Ok(())};
     if area.in_bounds(new_x, new_y) {
+      if let Some(name) = self.enemy_name_at(new_x, new_y) {
+        self.show_popup(format!("{name} blocks your way."));
+        return Ok(())
+      }
       if area.is_walkable(new_x, new_y) {
         self.player_x = new_x;
         self.player_y = new_y;
