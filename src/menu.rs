@@ -45,7 +45,7 @@ const ENTRIES: [MenuEntry; 3] = [
     key: "D",
     title: "ENGINE WORKBENCH",
     subtitle: "Shape and inspect the campaign",
-    detail: "Browse actors, invoke scoped tools, frame scenes, create threats, and inspect canonical consequences.",
+    detail: "Browse actors, invoke scoped tools, inspect canonical consequences, or play a tiny AI-powered scene.",
   },
   MenuEntry {
     choice: MainMenuChoice::Quit,

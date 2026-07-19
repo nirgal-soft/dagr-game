@@ -24,6 +24,7 @@ mod game_state;
 mod generators;
 mod input;
 mod menu;
+mod scene_playground;
 mod navigation;
 mod pathfinding;
 mod region_gen;
@@ -70,11 +71,20 @@ async fn run() -> Result<()>{
   loop{
     match menu::show_main_menu(world_seed)?{
       menu::MainMenuChoice::Play => run_game(pool.clone(), world_seed).await?,
-      menu::MainMenuChoice::DebugTools => debug_tui::run(pool.clone()).await?,
+      menu::MainMenuChoice::DebugTools => run_debug_tools(pool.clone()).await?,
       menu::MainMenuChoice::Quit => break,
     }
   }
   Ok(())
+}
+
+async fn run_debug_tools(pool: Arc<sqlx::PgPool>) -> Result<()>{
+  loop{
+    match debug_tui::run(pool.clone()).await?{
+      debug_tui::DebugDestination::MainMenu => return Ok(()),
+      debug_tui::DebugDestination::ScenePlayground => scene_playground::run(pool.clone()).await?,
+    }
+  }
 }
 
 async fn run_game(pool: Arc<sqlx::PgPool>, world_seed: u64) -> Result<()>{

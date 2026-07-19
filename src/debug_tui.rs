@@ -209,7 +209,13 @@ impl DebugApp {
   }
 }
 
-pub async fn run(pool: Arc<PgPool>) -> Result<()> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DebugDestination {
+  MainMenu,
+  ScenePlayground,
+}
+
+pub async fn run(pool: Arc<PgPool>) -> Result<DebugDestination> {
   terminal::enable_raw_mode()?;
   execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)?;
   let _guard = TuiGuard;
@@ -247,7 +253,8 @@ pub async fn run(pool: Arc<PgPool>) -> Result<()> {
       continue;
     }
     match key.code {
-      KeyCode::Char('q') | KeyCode::Esc => break,
+      KeyCode::Char('q') | KeyCode::Esc => return Ok(DebugDestination::MainMenu),
+      KeyCode::Char('l') | KeyCode::Char('L') => return Ok(DebugDestination::ScenePlayground),
       KeyCode::Char('?') => app.help = true,
       KeyCode::Char('/') => {
         app.search = Some(if app.focus == Focus::Actors {
@@ -306,7 +313,6 @@ pub async fn run(pool: Arc<PgPool>) -> Result<()> {
       _ => {}
     }
   }
-  Ok(())
 }
 
 async fn handle_search_key(
@@ -671,7 +677,13 @@ fn draw(frame: &mut Frame<'_>, app: &DebugApp) {
         .fg(Color::LightCyan)
         .add_modifier(Modifier::BOLD),
     ),
-    Span::raw("   deterministic state • creative authority"),
+    Span::raw("   deterministic state • creative authority   "),
+    Span::styled(
+      "[ L  SCENE PLAYGROUND ]",
+      Style::default()
+        .fg(Color::LightMagenta)
+        .add_modifier(Modifier::BOLD),
+    ),
   ]))
   .block(Block::default().borders(Borders::BOTTOM));
   frame.render_widget(header, rows[0]);
@@ -695,7 +707,7 @@ fn draw(frame: &mut Frame<'_>, app: &DebugApp) {
   };
   let footer=Paragraph::new(Line::from(vec![
     Span::styled(search,Style::default().fg(Color::LightGreen)),
-    Span::styled("   Tab panes  ↑↓ navigate  Enter select  / search  e context/events  d demo  r refresh  ? help  q back ",Style::default().fg(Color::DarkGray)),
+    Span::styled("   Tab panes  ↑↓ navigate  Enter select  / search  e context/events  L playground  d demo  r refresh  ? help  q back ",Style::default().fg(Color::DarkGray)),
   ])).block(Block::default().borders(Borders::TOP));
   frame.render_widget(footer, rows[2]);
   if let Some(form) = &app.form {
@@ -894,7 +906,7 @@ fn draw_form(frame: &mut Frame<'_>, area: Rect, form: &ToolForm) {
 fn draw_help(frame: &mut Frame<'_>, area: Rect) {
   let popup = centered(area, 66, 62);
   frame.render_widget(Clear, popup);
-  let help = "JOYFUL ENGINE WORKBENCH\n\nTab / Shift-Tab   move between panes\n↑ ↓ or j k         navigate\nEnter              select actor or open tool\n/                  live filter / autocomplete\ne                  toggle context and event timeline\nd                  create a demo campaign scenario\nr                  refresh canonical state\nPageUp / PageDown  scroll details\n\nTOOL FORM\nTab / ↑ ↓          move fields\nType / Backspace   edit without losing other fields\n← →                 cycle enum choices\nCtrl-U              clear selected field\nF2                  load an editable example\nF5                  validate and commit\nEsc                 cancel without losing engine state\n\nPress any key to close help.";
+  let help = "JOYFUL ENGINE WORKBENCH\n\nTab / Shift-Tab   move between panes\n↑ ↓ or j k         navigate\nEnter              select actor or open tool\n/                  live filter / autocomplete\ne                  toggle context and event timeline\nL                  open a tiny AI-powered gameplay scene\nd                  create a demo campaign scenario\nr                  refresh canonical state\nPageUp / PageDown  scroll details\n\nTOOL FORM\nTab / ↑ ↓          move fields\nType / Backspace   edit without losing other fields\n← →                 cycle enum choices\nCtrl-U              clear selected field\nF2                  load an editable example\nF5                  validate and commit\nEsc                 cancel without losing engine state\n\nPress any key to close help.";
   frame.render_widget(
     Paragraph::new(help)
       .block(Block::default().title(" HELP ").borders(Borders::ALL))
