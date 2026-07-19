@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use dagr_lib::{
-  combat::{AttackResult, CombatExchange, CombatService},
+  combat::{CombatExchange, CombatService},
   components::{
     characters::{character::Character, position::CharacterPosition},
     monsters::monster_stats::MonsterStats,
@@ -86,8 +86,7 @@ pub async fn exchange(
   let player_id=character_id(manager,player)?;
   let report=CombatService::new(pool).exchange(player_id,enemy.character_id).await?;
   synchronize(manager,player,enemy.entity,&report)?;
-  let message=format_exchange(&enemy.name,&report);
-  Ok((report,message))
+  Ok((report,enemy.name))
 }
 
 fn synchronize(
@@ -115,20 +114,4 @@ fn replace_hp(world:&mut hecs::World,entity:Entity,current_hp:i32)->Result<()>{
   stats.set(data);
   stats.clean();
   Ok(())
-}
-
-fn format_exchange(enemy:&str,report:&CombatExchange)->String{
-  let attack=format_attack("You",&report.attack);
-  let retaliation=report.retaliation.as_ref()
-    .map(|result| format_attack(enemy,result))
-    .unwrap_or_else(|| format!("{enemy} is defeated."));
-  format!("{attack} {retaliation} HP: {}.",report.attacker_hp)
-}
-
-fn format_attack(actor:&str,result:&AttackResult)->String{
-  if result.hit{
-    format!("{actor} roll {} and hit for {}.",result.roll,result.damage)
-  }else{
-    format!("{actor} roll {} and miss.",result.roll)
-  }
 }

@@ -77,13 +77,11 @@ fn fuzzy_score(query: &str, candidate: &str) -> Option<usize>{
   if query.is_empty(){return Some(0)}
   let mut chars = query.chars();
   let mut wanted = chars.next()?;
-  let mut span = 0;
   for (index, character) in candidate.chars().enumerate(){
     if character == wanted{
-      span = index;
       match chars.next(){
         Some(next) => wanted = next,
-        None => return Some(span),
+        None => return Some(index),
       }
     }
   }

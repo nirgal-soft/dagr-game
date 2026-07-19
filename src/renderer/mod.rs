@@ -89,31 +89,26 @@ impl Renderer{
     );
     stat_bar.draw(stdout)?;
 
-    let hexes_explored = game_state.map.count();
     let mut stats = game_state.coordinate_debug_lines();
     stats.extend([
-      format!("explored: {}", hexes_explored),
       format!("view: {}", game_state.current_view_label()),
-      format!("cam: ({}, {})", game_state.camera.x, game_state.camera.y),
+      "M spawn  R reset".to_string(),
+      "o explore  q quit".to_string(),
     ]);
     let mut stats_panel = Panel::new(35, self.map_height, 28, 8);
     stats_panel.set_title("Stats".to_string());
     stats_panel.set_content(stats);
     stats_panel.draw(stdout)?;
 
-    let controls_width = self.width.saturating_sub(63);
-    if controls_width >= 20 {
-      let mut controls = Panel::new(63, self.map_height, controls_width, 8);
-      controls.set_title("Controls".to_string());
-      controls.set_content(vec![
-        "move: arrows / hjklyubn".to_string(),
-        "enter/descend: >  ascend: <".to_string(),
-        "auto-explore: o or O".to_string(),
-        "dismiss popup: Space".to_string(),
-        "spawn: M  reset arena: R".to_string(),
-        "quit: q".to_string(),
-      ]);
-      controls.draw(stdout)?;
+    let combat_width = self.width.saturating_sub(63);
+    if combat_width >= 20 {
+      let mut combat = Panel::new(63, self.map_height, combat_width, 8);
+      combat.set_title("Combat rolls".to_string());
+      let lines=game_state.combat.log_lines(6);
+      combat.set_content(if lines.is_empty(){
+        vec!["No exchanges yet. Press M to choose an opponent.".to_string()]
+      }else{lines});
+      combat.draw(stdout)?;
     }
 
     // let hex_data = game_state.get_current_hex()?.get();

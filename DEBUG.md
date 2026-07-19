@@ -12,8 +12,10 @@ reads the loaded bestiary, so new content-pack monsters appear without client
 code changes.
 
 In the arena, moving into a monster exchanges one Whitehack-style attack and one
-retaliation. HP, wounds, defeat, and tile positions persist. Press `R` to clear
-positioned arena monsters and restore the arena fighter to full HP. Press `o` or
+retaliation. The arena fighter is a durable level-5 Strong test fixture. HP,
+wounds, defeat, and tile positions persist, while dice outcomes accumulate in
+the non-modal **Combat rolls** panel. Press `R` to clear positioned arena
+monsters and restore the arena fighter to full HP. Press `o` or
 `O` to auto-explore other local areas; this also dismisses an open discovery or
 enemy popup so exploration starts immediately.
 

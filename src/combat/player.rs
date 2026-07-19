@@ -8,7 +8,7 @@ use dagr_lib::{
       character_types::CharacterType,
       position::CharacterPosition,
     },
-    stats::{base_stats::BaseStatsData, pc_stats::PlayerCharacterStatsData},
+    stats::{base_stats::{BaseStats, BaseStatsData}, pc_stats::PlayerCharacterStatsData},
   },
   ems::{component::Component, entity_manager::EntityManager},
   factories::characters::character::{
@@ -21,18 +21,17 @@ use sqlx::PgPool;
 
 pub async fn ensure(
   manager: &EntityManager,
+  pool: &Arc<PgPool>,
   location_id: LocationId,
   spawn: (i32, i32),
 ) -> Result<Entity>{
   if let Some(entity) = find(manager, location_id){
+    upgrade_fixture(manager,pool,entity).await?;
     return Ok(entity)
   }
-  let mut stats = BaseStatsData::default();
-  stats.set_av(10);
-  stats.set_dv(0);
   manager.create(PlayerCharacterSeed{
     name: "Arena fighter".to_string(),
-    base_stats: stats,
+    base_stats: arena_stats(),
     pc_stats: PlayerCharacterStatsData::default(),
     position: Some(CharacterPositionSeed{
       location_id,
@@ -40,6 +39,29 @@ pub async fn ensure(
       y: spawn.1,
     }),
   }).await
+}
+
+fn arena_stats()->BaseStatsData{
+  let mut stats=BaseStatsData::default();
+  stats.set_hd((5,6,0));
+  stats.set_av(13);
+  stats.set_dv(5);
+  stats.set_sv(9);
+  stats.set_current_hp(18);
+  stats.set_max_hp(18);
+  stats.set_level(5);
+  stats
+}
+
+async fn upgrade_fixture(manager:&EntityManager,pool:&Arc<PgPool>,entity:Entity)->Result<()>{
+  let current=manager.get_component::<dagr_lib::components::stats::base_stats::BaseStats,_>(entity)?;
+  let current=current.get();
+  if current.get_level()==5{return Ok(())}
+  let mut upgraded=arena_stats();
+  upgraded.set_character_id(dagr_lib::ids::CharacterId::new(current.get_character_id())?);
+  manager.set_component::<BaseStats,_>(entity,upgraded)?;
+  manager.save_dirty(pool).await?;
+  Ok(())
 }
 
 pub fn find(manager: &EntityManager, location_id: LocationId) -> Option<Entity>{
@@ -81,4 +103,19 @@ pub async fn move_to(
   }
   manager.save_dirty(pool).await?;
   Ok(())
+}
+
+#[cfg(test)]
+mod tests{
+  use super::*;
+
+  #[test]
+  fn arena_fixture_uses_level_five_strong_baseline(){
+    let stats=arena_stats();
+    assert_eq!(stats.get_level(),5);
+    assert_eq!(stats.get_av(),13);
+    assert_eq!(stats.get_dv(),5);
+    assert_eq!(stats.get_sv(),9);
+    assert_eq!((stats.get_current_hp(),stats.get_max_hp()),(18,18));
+  }
 }

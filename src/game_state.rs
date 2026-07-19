@@ -200,7 +200,7 @@ impl GameState {
         y: position.1,
       }),
     }).await?;
-    self.show_popup(format!("{} enters the arena.", choice.name));
+    self.combat.log(format!("{} enters the arena.",choice.name));
     Ok(())
   }
 
@@ -216,7 +216,6 @@ impl GameState {
     let location_id=self.current_location_id()
       .ok_or_else(||anyhow!("combat arena has no location"))?;
     self.combat.reset_arena(&self.entity_manager,location_id).await?;
-    self.show_popup("The arena is cleared. You recover to full HP.");
     Ok(())
   }
 
@@ -237,18 +236,18 @@ impl GameState {
     let Some(area) = self.view_manager.current_area() else{return Ok(())};
     if area.in_bounds(new_x, new_y) {
       if self.player_hit_points().is_some_and(|(current,_)|current == 0) {
-        self.show_popup("You are down. Leave the arena to reset the match later.");
+        self.combat.log("You are down. Press R to reset the arena.");
         return Ok(())
       }
       if let Some(enemy) = self.enemy_at(new_x, new_y) {
         if let Some(player) = self.combat.player() {
-          let (_,message) = controller::exchange(
+          let (report,enemy_name) = controller::exchange(
             self.combat.pool(),
             &self.entity_manager,
             player,
             enemy,
           ).await?;
-          self.show_popup(message);
+          self.combat.record_exchange(&enemy_name,&report);
         }else{
           self.show_popup(format!("{} blocks your way.",enemy.name));
         }

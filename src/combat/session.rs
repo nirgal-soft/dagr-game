@@ -9,23 +9,34 @@ use dagr_lib::{
 use hecs::Entity;
 use sqlx::PgPool;
 
-use super::{controller, picker::{MonsterChoice, MonsterPicker}, player};
+use super::{
+  controller,
+  log::CombatLog,
+  picker::{MonsterChoice, MonsterPicker},
+  player,
+};
 
 pub struct CombatSession{
   pool: Arc<PgPool>,
   player: Option<Entity>,
   picker: Option<MonsterPicker>,
+  log: CombatLog,
 }
 
 impl CombatSession{
   pub fn new(pool: Arc<PgPool>) -> Self{
-    Self{pool,player:None,picker:None}
+    Self{pool,player:None,picker:None,log:CombatLog::default()}
   }
 
   pub fn pool(&self) -> Arc<PgPool>{self.pool.clone()}
   pub fn player(&self) -> Option<Entity>{self.player}
   pub fn picker(&self) -> Option<&MonsterPicker>{self.picker.as_ref()}
   pub fn picker_is_open(&self) -> bool{self.picker.is_some()}
+  pub fn log_lines(&self,count:usize)->Vec<String>{self.log.recent(count)}
+  pub fn log(&mut self,line:impl Into<String>){self.log.push(line)}
+  pub fn record_exchange(&mut self,enemy:&str,report:&dagr_lib::combat::CombatExchange){
+    self.log.record_exchange(enemy,report)
+  }
 
   pub async fn enter_arena(
     &mut self,
@@ -33,7 +44,7 @@ impl CombatSession{
     location_id:LocationId,
     spawn:(i32,i32),
   )->Result<(i32,i32)>{
-    let entity=player::ensure(manager,location_id,spawn).await?;
+    let entity=player::ensure(manager,&self.pool,location_id,spawn).await?;
     self.player=Some(entity);
     player::position(manager,entity)
   }
@@ -54,12 +65,14 @@ impl CombatSession{
   }
 
   pub async fn reset_arena(
-    &self,
+    &mut self,
     manager:&EntityManager,
     location_id:LocationId,
   )->Result<()>{
     if let Some(player)=self.player{
       controller::reset_arena(self.pool.clone(),manager,player,location_id).await?;
+      self.log.clear();
+      self.log.push("Arena reset: fighter restored, opponents cleared.");
     }
     Ok(())
   }
