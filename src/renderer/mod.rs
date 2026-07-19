@@ -95,6 +95,20 @@ impl Renderer{
     stats_panel.set_content(stats);
     stats_panel.draw(stdout)?;
 
+    let controls_width = self.width.saturating_sub(49);
+    if controls_width >= 20 {
+      let mut controls = Panel::new(49, self.map_height, controls_width, 8);
+      controls.set_title("Controls".to_string());
+      controls.set_content(vec![
+        "move: arrows / hjklyubn".to_string(),
+        "enter/descend: >  ascend: <".to_string(),
+        "auto-explore: o or O".to_string(),
+        "dismiss popup: Space".to_string(),
+        "test enemy: M  quit: q".to_string(),
+      ]);
+      controls.draw(stdout)?;
+    }
+
     // let hex_data = game_state.get_current_hex()?.get();
     // let hex = Tile::from_terrain_type(&hex_data);
     // let mut hex_panel = Panel::new(42, self.map_height, 30, 8);

@@ -179,6 +179,7 @@ async fn run_game(
         needs_refresh = true;
       },
       Action::Explore => {
+        game_state.dismiss_popup();
         game_state.start_exploring();
         needs_refresh = true;
       },

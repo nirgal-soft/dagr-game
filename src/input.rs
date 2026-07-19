@@ -58,11 +58,26 @@ impl InputManager{
       KeyCode::Char(' ') => Action::Dismiss,
       KeyCode::Char('q') => Action::Quit,
       KeyCode::Char('.') => Action::Wait,
-      KeyCode::Char('o') => Action::Explore,
+      KeyCode::Char('o') | KeyCode::Char('O') => Action::Explore,
       KeyCode::Char('D') => Action::GenerateDungeon,
       KeyCode::Char('M') => Action::SpawnTestEnemy,
 
       _ => Action::None,
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests{
+  use super::*;
+  use crossterm::event::KeyModifiers;
+
+  #[test]
+  fn auto_explore_accepts_lowercase_and_uppercase_o(){
+    let input = InputManager::new();
+    for key in ['o', 'O']{
+      let action = input.key_to_action(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE));
+      assert!(matches!(action, Action::Explore));
     }
   }
 }

@@ -5,7 +5,8 @@ persistent `core:goblin` test enemy on a nearby walkable tile. The enemy is
 rendered only in line-of-sight, blocks movement, and is rehydrated at the same
 location and tile after restart. Repeating `M` in the same area does not create
 a duplicate. This is an enemy-instantiation test; combat and AI are intentionally
-not part of this slice.
+not part of this slice. Press `o` or `O` to auto-explore a local area; this also
+dismisses any open discovery or enemy popup so exploration starts immediately.
 
 ## Engine Workbench
 
