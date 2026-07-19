@@ -1,5 +1,6 @@
 pub mod bar;
 pub mod border_style;
+pub mod command_line;
 pub mod map;
 pub mod monster_picker;
 pub mod panel;

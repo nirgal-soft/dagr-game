@@ -10,7 +10,7 @@ use dagr_lib::factories::{
   characters::character::{CharacterPositionSeed, MonsterCharacterSeed},
   world::{
     dungeon::DungeonSeed,
-    hex::HexSeed,
+    hex::{HexProfileSeed,HexSeed},
     wilderness::WildernessAreaSeed,
   },
 };
@@ -19,6 +19,7 @@ use tracing::info;
 
 use crate::camera::Camera;
 use crate::combat::{controller, picker::MonsterChoice, session::CombatSession};
+use crate::debug_console::session::DebugSession;
 use crate::generators::arena::{
   COMBAT_ARENA_HEIGHT, COMBAT_ARENA_KEY, COMBAT_ARENA_WIDTH,
 };
@@ -41,6 +42,7 @@ pub struct GameState {
   pub render_config: RenderConfig,
   navigator: Navigator,
   pub combat: CombatSession,
+  pub debug: DebugSession,
   look_mode: Option<LookMode>,
   pub popup_message: Option<String>,
 }
@@ -63,6 +65,7 @@ impl GameState {
       render_config: RenderConfig::default(),
       navigator: Navigator::new(),
       combat: CombatSession::new(pool),
+      debug: DebugSession::default(),
       look_mode: None,
       popup_message: None,
     };
@@ -369,6 +372,21 @@ impl GameState {
     Ok(())
   }
 
+  pub async fn place_debug_hex(
+    &mut self,x:i32,y:i32,profile:HexProfileSeed,
+  )->Result<bool>{
+    if self.map.get((x,y)).is_some(){return Ok(false)}
+    let entity=self.entity_manager.create(HexSeed{x,y,prev:None,profile:Some(profile)}).await?;
+    self.map.insert((x,y),entity);
+    if let Ok(hex)=self.entity_manager.get_component::<Hex,_>(entity){
+      let tile=Tile::from_terrain_type(&hex.get());
+      let mut world=self.entity_manager.world.lock()
+        .map_err(|_|anyhow!("ECS world lock poisoned"))?;
+      world.insert_one(entity,tile)?;
+    }
+    Ok(true)
+  }
+
   pub async fn generate_hex_at(&mut self, x: i32, y: i32) -> Result<()> {
     info!(x, y, "generating hex");
     let prev = self
@@ -378,7 +396,7 @@ impl GameState {
 
     let entity = self
       .entity_manager
-      .create(HexSeed{x, y, prev})
+      .create(HexSeed::generated(x,y,prev))
       .await?;
 
     self.map.insert((x, y), entity);

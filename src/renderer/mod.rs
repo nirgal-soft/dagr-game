@@ -2,7 +2,7 @@ use std::{collections::HashSet, io::Write};
 use anyhow::Result;
 use crossterm::style::Color;
 use crate::game_state::GameState;
-use crate::ui::{map::Map, monster_picker, stat_bar::StatBar, panel::Panel, popup::Popup};
+use crate::ui::{command_line, map::Map, monster_picker, stat_bar::StatBar, panel::Panel, popup::Popup};
 
 pub mod render_config;
 pub use render_config::RenderConfig;
@@ -38,6 +38,9 @@ impl Renderer{
     if let Some(picker) = game_state.combat.picker(){
       monster_picker::draw(stdout,picker,self.width,self.height)?;
     }
+    if let Some(input)=game_state.debug.console(){
+      command_line::draw(stdout,input,self.width,self.height)?;
+    }
     
     stdout.flush()?;
     Ok(())
@@ -48,21 +51,22 @@ impl Renderer{
       let world_x = x as i32 + game_state.camera.x;
       let world_y = y as i32 + game_state.camera.y;
 
-      if world_x == game_state.player_x && world_y == game_state.player_y{
-        return Some(game_state.render_config.player_tile());
-      }
-
-      match game_state.map.get((world_x, world_y)){
+      let pos=(world_x,world_y);
+      let mut tile=if pos==(game_state.player_x,game_state.player_y){
+        Some(game_state.render_config.player_tile())
+      }else{match game_state.map.get(pos){
         Some(entity) => {
           game_state.entity_manager.with::<Tile, _, _>(
             entity,
             |tile| *tile
           ).ok()
         }
-        None => {
-          Some(Tile::new('░', Color::DarkGrey))
-        }
+        None => Some(Tile::new('░',Color::DarkGrey)),
+      }};
+      if game_state.debug.editor().is_some_and(|editor|editor.cursor==pos){
+        tile=tile.map(Tile::inverted);
       }
+      tile
     })?;
     Ok(())
   }
@@ -138,12 +142,18 @@ impl Renderer{
     let combat_width = self.width.saturating_sub(63);
     if combat_width >= 20 {
       let mut combat = Panel::new(63, self.map_height, combat_width, 8);
-      if game_state.is_looking(){
+      if let Some(editor)=game_state.debug.editor(){
+        combat.set_title(format!("Hex ({}, {})",editor.cursor.0,editor.cursor.1));
+        let mut lines=editor.lines(5);
+        if let Some(message)=game_state.debug.message(){lines.push(message.to_string())}
+        combat.set_content(lines);
+      }else if game_state.is_looking(){
         combat.set_title("Look".to_string());
         combat.set_content(game_state.inspection_lines());
       }else{
         combat.set_title("Combat rolls".to_string());
-        let lines=game_state.combat.log_lines(6);
+        let mut lines=game_state.combat.log_lines(6);
+        if let Some(message)=game_state.debug.message(){lines.push(message.to_string())}
         combat.set_content(if lines.is_empty(){
           vec!["No exchanges yet. Press M to choose an opponent.".to_string()]
         }else{lines});

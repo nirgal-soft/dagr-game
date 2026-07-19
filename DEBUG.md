@@ -1,5 +1,20 @@
 # Debug and Playtest Controls
 
+## World Hex editor
+
+Press `:` and enter `debug on` to enable session-local world editing. In World
+view, press `x` to open the Hex placement overlay. Move the world cursor with
+`hjkl/yubn`, select profile fields with `↑`/`↓`, cycle values with `←`/`→`, and
+press `x` to atomically create the configured Hex at an empty coordinate. `Esc`
+closes the editor. Existing Hexes are never overwritten.
+
+The first profile editor controls terrain, vegetation, water, POI, climate,
+danger, resource richness, and a currently empty Region selection. Commands are
+limited to `debug on`, `debug off`, `debug status`, and `help`; the console does
+not execute SQL or mutate ECS directly.
+
+## Combat and local inspection
+
 Choose **Combat Arena** from the main menu to enter a persistent, fully visible
 31×21 stone-circle test area. It has a separate location identity, so arena
 enemies do not leak into the generated Wilderness and can later retain wounds

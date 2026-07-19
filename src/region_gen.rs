@@ -15,15 +15,11 @@ impl RegionGenerator{
   pub async fn generate(&mut self) -> Result<()>{
     let x = 1;
     let y = 1;
-    let seed_hex = self.entity_manager.create(HexSeed{x, y, prev: None}).await?;
+    let seed_hex = self.entity_manager.create(HexSeed::generated(x,y,None)).await?;
     let mut prev = self.entity_manager.get_component::<Hex, _>(seed_hex)?;
     for dy in y..100{
       for dx in x..100{
-        let entity = self.entity_manager.create(HexSeed{
-          x: dx,
-          y: dy,
-          prev: Some(prev.clone()),
-        }).await?;
+        let entity = self.entity_manager.create(HexSeed::generated(dx, dy, Some(prev.clone()))).await?;
         prev = self.entity_manager.get_component::<Hex, _>(entity)?;
       }
     }
