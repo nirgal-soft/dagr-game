@@ -68,12 +68,15 @@ impl Renderer{
   }
 
   fn render_location(&self, stdout: &mut std::io::Stdout, map: &Map, game_state: &GameState) -> Result<()>{
+    let enemies=game_state.visible_enemy_positions();
     map.draw(stdout, |x, y|{
       let world_x = x as i32 + game_state.camera.x;
       let world_y = y as i32 + game_state.camera.y;
 
       let mut tile=if world_x == game_state.player_x && world_y == game_state.player_y{
         Some(game_state.render_config.player_tile())
+      }else if enemies.contains(&(world_x,world_y)){
+        Some(Tile::new('g',Color::Red))
       }else{
         game_state.get_location_tile(world_x,world_y)
       };

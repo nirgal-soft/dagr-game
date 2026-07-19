@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use dagr_lib::{
@@ -43,6 +43,19 @@ pub fn enemy_at(
       })
     },
   )
+}
+
+pub fn enemy_positions(
+  manager:&EntityManager,
+  location_id:LocationId,
+)->HashSet<(i32,i32)>{
+  let world=manager.world();
+  let Ok(world)=world.lock() else{return HashSet::new()};
+  world.query::<(&MonsterStats,&CharacterPosition)>().iter()
+    .filter_map(|(_,(_,position))|{
+      let position=position.get();
+      (position.get_location_id().ok()==Some(location_id)).then_some((position.x,position.y))
+    }).collect()
 }
 
 pub fn character_id(manager: &EntityManager, entity: Entity) -> Result<CharacterId>{

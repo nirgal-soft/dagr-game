@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::{Result, anyhow};
 use dagr_lib::components::{
   stats::base_stats::BaseStatsData,
@@ -13,7 +15,6 @@ use dagr_lib::factories::{
   },
 };
 use dagr_lib::ids::LocationId;
-use crossterm::style::Color;
 use tracing::info;
 
 use crate::camera::Camera;
@@ -132,12 +133,15 @@ impl GameState {
   }
 
   pub fn get_location_tile(&self, x: i32, y: i32) -> Option<Tile> {
-    let area = self.view_manager.current_area()?;
-    let terrain = area.get_visible_tile(x, y, &self.render_config)?;
-    if area.is_visible(x, y) && self.enemy_at(x, y).is_some() {
-      return Some(Tile::new('g', Color::Red));
-    }
-    Some(terrain)
+    self.view_manager.current_area()?
+      .get_visible_tile(x,y,&self.render_config)
+  }
+
+  pub fn visible_enemy_positions(&self)->HashSet<(i32,i32)>{
+    let Some(area)=self.view_manager.current_area() else{return HashSet::new()};
+    let Some(location_id)=self.current_location_id() else{return HashSet::new()};
+    controller::enemy_positions(&self.entity_manager,location_id).into_iter()
+      .filter(|(x,y)|area.is_visible(*x,*y)).collect()
   }
 
   fn current_location_id(&self) -> Option<LocationId> {
