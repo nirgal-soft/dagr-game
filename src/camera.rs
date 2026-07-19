@@ -39,10 +39,8 @@ impl Camera{
 
 fn pan_axis(origin:i32,extent:i32,target:i32)->i32{
   if extent<=2{return origin}
-  if target<=origin{
-    target-1
-  }else if target>=origin+extent-1{
-    target-extent+2
+  if target<=origin || target>=origin+extent-1{
+    target-(extent/2)
   }else{
     origin
   }
@@ -58,8 +56,8 @@ mod tests{
     camera.pan_when_border_reached(5,4);
     assert_eq!((camera.x,camera.y),(0,0));
     camera.pan_when_border_reached(9,4);
-    assert_eq!((camera.x,camera.y),(1,0));
-    camera.pan_when_border_reached(1,4);
-    assert_eq!((camera.x,camera.y),(0,0));
+    assert_eq!((camera.x,camera.y),(4,0));
+    camera.pan_when_border_reached(4,4);
+    assert_eq!((camera.x,camera.y),(-1,0));
   }
 }

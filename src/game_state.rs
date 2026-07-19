@@ -596,13 +596,15 @@ impl GameState {
     }
   }
 
-  pub fn move_look_cursor(&mut self,dx:i32,dy:i32){
-    let Some(area)=self.view_manager.current_area() else{return};
+  pub fn move_look_cursor(&mut self,dx:i32,dy:i32)->bool{
+    let Some(area)=self.view_manager.current_area() else{return false};
+    let camera_before=(self.camera.x,self.camera.y);
     if let Some(mode)=self.look_mode.as_mut(){
       mode.move_by(dx,dy,(area.width,area.height));
       let cursor=mode.cursor();
       self.camera.pan_when_border_reached(cursor.0,cursor.1);
     }
+    camera_before!=(self.camera.x,self.camera.y)
   }
 
   pub fn close_look(&mut self){

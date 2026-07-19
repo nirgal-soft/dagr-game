@@ -26,6 +26,20 @@ impl Map{
     Self{x,y,w,h}
   }
 
+  pub fn draw_cell(&self,stdout:&mut io::Stdout,screen_x:u16,screen_y:u16,tile:Option<Tile>)->Result<()>{
+    if screen_x>=self.w.saturating_sub(2) || screen_y>=self.h.saturating_sub(2){
+      return Ok(())
+    }
+    queue!(stdout,cursor::MoveTo(self.x+screen_x+1,self.y+screen_y+1))?;
+    if let Some(tile)=tile{
+      queue!(stdout,SetForegroundColor(tile.fg),SetBackgroundColor(tile.bg),style::Print(tile.symbol))?;
+    }else{
+      queue!(stdout,SetForegroundColor(Color::Black),SetBackgroundColor(Color::Black),style::Print(' '))?;
+    }
+    queue!(stdout,ResetColor)?;
+    Ok(())
+  }
+
   pub fn draw<F>(&self, stdout: &mut io::Stdout, mut tile_fn: F) -> Result<()>
   where 
     F: FnMut(u16, u16) -> Option<Tile>

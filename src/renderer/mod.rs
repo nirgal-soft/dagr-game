@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{collections::HashSet, io::Write};
 use anyhow::Result;
 use crossterm::style::Color;
 use crate::game_state::GameState;
@@ -70,23 +70,51 @@ impl Renderer{
   fn render_location(&self, stdout: &mut std::io::Stdout, map: &Map, game_state: &GameState) -> Result<()>{
     let enemies=game_state.visible_enemy_positions();
     map.draw(stdout, |x, y|{
-      let world_x = x as i32 + game_state.camera.x;
-      let world_y = y as i32 + game_state.camera.y;
-
-      let mut tile=if world_x == game_state.player_x && world_y == game_state.player_y{
-        Some(game_state.render_config.player_tile())
-      }else if enemies.contains(&(world_x,world_y)){
-        Some(Tile::new('g',Color::Red))
-      }else{
-        game_state.get_location_tile(world_x,world_y)
-      };
-      if game_state.look_cursor()==Some((world_x,world_y)){
-        tile=Some(tile.unwrap_or_else(||Tile::new(' ',Color::White)).inverted());
-      }
-      tile
+      let pos=(x as i32+game_state.camera.x,y as i32+game_state.camera.y);
+      self.location_tile_at(game_state,&enemies,pos,game_state.look_cursor()==Some(pos))
     })?;
-
     Ok(())
+  }
+
+  pub fn render_look_delta(
+    &self,
+    stdout:&mut std::io::Stdout,
+    game_state:&GameState,
+    previous:(i32,i32),
+  )->Result<()>{
+    let map=Map::new(0,0,self.width,self.map_height);
+    let enemies=game_state.visible_enemy_positions();
+    if let Some((x,y))=game_state.camera.world_to_screen(previous.0,previous.1){
+      map.draw_cell(stdout,x,y,self.location_tile_at(game_state,&enemies,previous,false))?;
+    }
+    if let Some(current)=game_state.look_cursor(){
+      if let Some((x,y))=game_state.camera.world_to_screen(current.0,current.1){
+        map.draw_cell(stdout,x,y,self.location_tile_at(game_state,&enemies,current,true))?;
+      }
+    }
+    self.render_ui(stdout,game_state)?;
+    stdout.flush()?;
+    Ok(())
+  }
+
+  fn location_tile_at(
+    &self,
+    game_state:&GameState,
+    enemies:&HashSet<(i32,i32)>,
+    pos:(i32,i32),
+    highlighted:bool,
+  )->Option<Tile>{
+    let mut tile=if pos==(game_state.player_x,game_state.player_y){
+      Some(game_state.render_config.player_tile())
+    }else if enemies.contains(&pos){
+      Some(Tile::new('g',Color::Red))
+    }else{
+      game_state.get_location_tile(pos.0,pos.1)
+    };
+    if highlighted{
+      tile=Some(tile.unwrap_or_else(||Tile::new(' ',Color::White)).inverted());
+    }
+    tile
   }
 
   fn render_ui(&self, stdout: &mut std::io::Stdout, game_state: &GameState) -> Result<()>{

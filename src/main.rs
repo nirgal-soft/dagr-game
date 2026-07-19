@@ -162,12 +162,22 @@ async fn run_game(
     let action=input.poll_input(game_state.combat.picker_is_open());
     if game_state.is_looking(){
       match action{
-        Action::Move(dx,dy) => game_state.move_look_cursor(dx,dy),
-        Action::Look | Action::Cancel => game_state.close_look(),
+        Action::Move(dx,dy) => {
+          let previous=game_state.look_cursor().unwrap_or((game_state.player_x,game_state.player_y));
+          if game_state.move_look_cursor(dx,dy){
+            needs_refresh=true;
+          }else{
+            renderer.render_look_delta(&mut stdout,&game_state,previous)?;
+            needs_refresh=false;
+          }
+        },
+        Action::Look | Action::Cancel => {
+          game_state.close_look();
+          needs_refresh=true;
+        },
         Action::Quit => break,
         _ => {},
       }
-      needs_refresh=true;
       continue
     }
 
