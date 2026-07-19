@@ -30,7 +30,6 @@ impl Feature{
   pub const ROCK: Self = Self::new('o', Color::Grey, false, true);
   pub const RUBBLE: Self = Self::new(':', Color::DarkGrey, true, false);
   pub const WATER: Self = Self::new('~', Color::Blue, true, false);
-  pub const TRAIL: Self = Self::new('·', Color::DarkYellow, true, false);
   pub const LANDMARK: Self = Self::new('*', Color::Yellow, true, false);
   pub const STAIRS_UP: Self = Self::new('<', Color::Yellow, true, false)
     .with_bg(Color::Rgb{r: 50, g: 40, b: 20});

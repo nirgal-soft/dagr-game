@@ -65,13 +65,11 @@ impl WildernessGenerator {
     self.paint_vegetation(&mut area, &mut rng);
     self.paint_terrain(&mut area, &mut rng);
     self.paint_water(&mut area, &mut rng);
-    self.clear_stable_gates(&mut area);
-    self.carve_routes(&mut area, &mut rng);
-    self.place_landmark(&mut area, &mut rng);
 
     let center = (width / 2, height / 2);
     clear_radius(&mut area, center, 1);
     area.set_entrance(center.0, center.1);
+    self.place_landmark(&mut area, &mut rng);
     Ok(area)
   }
 
@@ -128,37 +126,24 @@ impl WildernessGenerator {
     }
   }
 
-  fn clear_stable_gates(&self, area: &mut Area) {
-    for gate in edge_gates(area.width, area.height) {
-      area.remove_feature(gate.0, gate.1);
-    }
-  }
-
-  fn carve_routes(&self, area: &mut Area, rng: &mut StdRng) {
-    let center = (area.width / 2, area.height / 2);
-    for gate in edge_gates(area.width, area.height) {
-      let mut waypoint = ((center.0 + gate.0) / 2, (center.1 + gate.1) / 2);
-      if gate.0 == 0 || gate.0 == area.width - 1 {
-        let wander = (area.height / 8).max(1);
-        waypoint.1 = (waypoint.1 + rng.random_range(-wander..=wander)).clamp(1, area.height - 2);
-      } else {
-        let wander = (area.width / 8).max(1);
-        waypoint.0 = (waypoint.0 + rng.random_range(-wander..=wander)).clamp(1, area.width - 2);
-      }
-      carve_winding_path(area, rng, center, waypoint);
-      carve_winding_path(area, rng, waypoint, gate);
-    }
-  }
-
   fn place_landmark(&self, area: &mut Area, rng: &mut StdRng) {
     if area.width < 7 || area.height < 7 {
       return;
     }
     let center = (area.width / 2, area.height / 2);
-    let gates = edge_gates(area.width, area.height);
-    let gate = gates[rng.random_range(0..gates.len())];
-    let landmark = ((center.0 + gate.0) / 2, (center.1 + gate.1) / 2);
-    area.set_feature(landmark.0, landmark.1, Feature::LANDMARK);
+    for _ in 0..40 {
+      let landmark = (
+        rng.random_range(2..area.width - 2),
+        rng.random_range(2..area.height - 2),
+      );
+      let distance = (landmark.0 - center.0).abs() + (landmark.1 - center.1).abs();
+      if distance > 5 && area.is_walkable(landmark.0, landmark.1) {
+        area.set_feature(landmark.0, landmark.1, Feature::LANDMARK);
+        return;
+      }
+    }
+    let fallback = ((center.0 + 3).min(area.width - 2), center.1);
+    area.set_feature(fallback.0, fallback.1, Feature::LANDMARK);
   }
 }
 
@@ -219,36 +204,6 @@ fn paint_river(area: &mut Area, rng: &mut StdRng) {
   }
 }
 
-fn edge_gates(width: i32, height: i32) -> [Pos; 4] {
-  [
-    (width / 2, 0),
-    (width - 1, height / 2),
-    (width / 2, height - 1),
-    (0, height / 2),
-  ]
-}
-
-fn carve_winding_path(area: &mut Area, rng: &mut StdRng, from: Pos, to: Pos) {
-  let mut cursor = from;
-  area.set_feature(cursor.0, cursor.1, Feature::TRAIL);
-  while cursor != to {
-    let move_x = cursor.0 != to.0;
-    let move_y = cursor.1 != to.1;
-    if move_x && move_y {
-      if rng.random_bool(0.5) {
-        cursor.0 += (to.0 - cursor.0).signum();
-      } else {
-        cursor.1 += (to.1 - cursor.1).signum();
-      }
-    } else if move_x {
-      cursor.0 += (to.0 - cursor.0).signum();
-    } else {
-      cursor.1 += (to.1 - cursor.1).signum();
-    }
-    area.set_feature(cursor.0, cursor.1, Feature::TRAIL);
-  }
-}
-
 fn clear_radius(area: &mut Area, center: Pos, radius: i32) {
   for dy in -radius..=radius {
     for dx in -radius..=radius {
@@ -260,7 +215,6 @@ fn clear_radius(area: &mut Area, center: Pos, radius: i32) {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::collections::{HashMap, VecDeque};
 
   fn count(area: &Area, feature: Feature) -> usize {
     (0..area.height)
@@ -269,26 +223,9 @@ mod tests {
       .count()
   }
 
-  fn route_exists(area: &Area, start: Pos, goal: Pos) -> bool {
-    let mut queue = VecDeque::from([start]);
-    let mut seen = HashMap::from([(start, ())]);
-    while let Some(pos) = queue.pop_front() {
-      if pos == goal {
-        return true;
-      }
-      for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-        let next = (pos.0 + dx, pos.1 + dy);
-        if area.is_walkable(next.0, next.1) && !seen.contains_key(&next) {
-          seen.insert(next, ());
-          queue.push_back(next);
-        }
-      }
-    }
-    false
-  }
 
   #[test]
-  fn generation_is_deterministic_and_keeps_routes_to_every_edge() {
+  fn generation_is_deterministic_with_natural_open_edges() {
     let generator = WildernessGenerator::new(1234);
     let first = generator.generate(64, 40).unwrap();
     let second = generator.generate(64, 40).unwrap();
@@ -298,10 +235,7 @@ mod tests {
         assert_eq!(first.get_tile(x, y), second.get_tile(x, y));
       }
     }
-    let center = first.entrance.unwrap();
-    for gate in edge_gates(first.width, first.height) {
-      assert!(route_exists(&first, center, gate), "gate {gate:?} is unreachable");
-    }
+    assert_eq!(first.entrance, Some((32, 20)));
     assert_eq!(count(&first, Feature::LANDMARK), 1);
     assert_eq!(first.get_feature(1, 0), None);
     assert_eq!(first.get_feature(first.width - 2, first.height - 1), None);
