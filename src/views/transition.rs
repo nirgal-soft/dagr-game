@@ -9,6 +9,7 @@ pub enum TransitionIntent {
   Ascend,
   Descend,
   ToLevel(i32),
+  CrossWildernessBoundary { target: Pos },
 }
 #[derive(Clone, Debug)]
 pub enum TransitionOutcome {
@@ -26,6 +27,21 @@ pub enum AsyncWork {
     parent_entity: Entity,
     location_type: LocationType,
   },
+  CreateWildernessArea {
+    parent_entity: Entity,
+    area_x: i32,
+    area_y: i32,
+    width: i32,
+    length: i32,
+    crossing: WildernessCrossing,
+  },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WildernessCrossing {
+  pub area_dx: i32,
+  pub area_dy: i32,
+  pub attempted_tile: Pos,
 }
 
 #[derive(Clone, Debug)]

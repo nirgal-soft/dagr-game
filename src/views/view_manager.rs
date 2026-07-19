@@ -9,7 +9,10 @@ use dagr_lib::components::world::{
   wilderness::Wilderness,
 };
 use dagr_lib::ems::{component::Component, entity_manager::EntityManager};
-use dagr_lib::factories::world::{dungeon::DungeonSeed, wilderness::WildernessSeed};
+use dagr_lib::factories::world::{
+  dungeon::DungeonSeed,
+  wilderness::WildernessAreaSeed,
+};
 use hecs::Entity;
 use tracing::info;
 
@@ -19,7 +22,9 @@ use crate::generators::{dungeon::DungeonGenerator, wilderness::WildernessGenerat
 use crate::seed::{LocationDiscriminator, derive_seed};
 
 use super::area_key::AreaKey;
-use super::transition::{AsyncWork, Transition, TransitionIntent, TransitionOutcome};
+use super::transition::{
+  AsyncWork, Transition, TransitionIntent, TransitionOutcome, WildernessCrossing,
+};
 use super::view_mode::ViewMode;
 
 pub struct ViewManager {
@@ -79,6 +84,9 @@ impl ViewManager {
       TransitionIntent::Ascend => self.ascend(player_pos, entity_manager),
       TransitionIntent::Descend => self.descend(player_pos, entity_manager),
       TransitionIntent::ToLevel(level) => self.transition_to_level(level, entity_manager),
+      TransitionIntent::CrossWildernessBoundary { target } => {
+        self.cross_wilderness_boundary(target, entity_manager)
+      }
     }
   }
 
@@ -94,14 +102,18 @@ impl ViewManager {
 
     if location_data.get_location_type() == LocationType::Hex {
       if let Some(wilderness) =
-        entity_manager.find_child_entity::<Wilderness>(location_data.get_id()?)
+        entity_manager.find_wilderness_area(location_data.get_id()?, "origin")
       {
         return self.enter(wilderness, None, entity_manager);
       }
 
-      return Ok(TransitionOutcome::NeedsAsync(AsyncWork::CreateLocation {
+      return Ok(TransitionOutcome::NeedsAsync(AsyncWork::CreateWildernessArea {
         parent_entity: entity,
-        location_type: LocationType::Wilderness,
+        area_x: 0,
+        area_y: 0,
+        width: 10,
+        length: 10,
+        crossing: WildernessCrossing{area_dx: 0, area_dy: 0, attempted_tile: (5, 5)},
       }));
     }
 
@@ -204,13 +216,17 @@ impl ViewManager {
       .find_entity_by_location_id::<Hex>(parent_id)
       .ok_or(ViewError::LocationNotFound(parent_id))?;
 
-    if let Some(wilderness_entity) = entity_manager.find_child_entity::<Wilderness>(parent_id) {
+    if let Some(wilderness_entity) = entity_manager.find_wilderness_area(parent_id, "origin") {
       return self.enter_wilderness_from_dungeon(wilderness_entity, dungeon_entity, entity_manager);
     }
 
-    Ok(TransitionOutcome::NeedsAsync(AsyncWork::CreateLocation {
+    Ok(TransitionOutcome::NeedsAsync(AsyncWork::CreateWildernessArea {
       parent_entity: hex_entity,
-      location_type: LocationType::Wilderness,
+      area_x: 0,
+      area_y: 0,
+      width: 10,
+      length: 10,
+      crossing: WildernessCrossing{area_dx: 0, area_dy: 0, attempted_tile: (5, 5)},
     }))
   }
 
@@ -304,6 +320,81 @@ impl ViewManager {
       return Ok(TransitionOutcome::Unsupported);
     }
     self.enter(entity, Some(level), entity_manager)
+  }
+
+  fn cross_wilderness_boundary(
+    &mut self,
+    attempted_tile: Pos,
+    entity_manager: &EntityManager,
+  ) -> Result<TransitionOutcome> {
+    let wilderness_entity = self.current_entity().ok_or(ViewError::NoCurrentLocation)?;
+    if !entity_manager.has::<Wilderness>(wilderness_entity) {
+      return Ok(TransitionOutcome::Unsupported);
+    }
+    let current_spatial = entity_manager.get_component::<Spatial, _>(wilderness_entity)?.get();
+    let area_dx = if attempted_tile.0 < 0 {
+      -1
+    } else if attempted_tile.0 >= current_spatial.get_width() {
+      1
+    } else {
+      0
+    };
+    let area_dy = if attempted_tile.1 < 0 {
+      -1
+    } else if attempted_tile.1 >= current_spatial.get_length() {
+      1
+    } else {
+      0
+    };
+    if area_dx == 0 && area_dy == 0 {
+      return Ok(TransitionOutcome::Unsupported);
+    }
+    let location = entity_manager.get_component::<Location, _>(wilderness_entity)?.get();
+    let parent_id = location
+      .get_parent_location_id()?
+      .ok_or(ViewError::NoParentLocation)?;
+    let parent_entity = entity_manager
+      .find_entity_by_location_id::<Hex>(parent_id)
+      .ok_or(ViewError::LocationNotFound(parent_id))?;
+    let target_x = current_spatial.get_x() + area_dx;
+    let target_y = current_spatial.get_y() + area_dy;
+    let crossing = WildernessCrossing { area_dx, area_dy, attempted_tile };
+    let area_key = wilderness_area_key(target_x, target_y);
+
+    if let Some(target) = entity_manager.find_wilderness_area(parent_id, &area_key) {
+      return self.enter_wilderness_from_boundary(target, crossing, entity_manager);
+    }
+
+    Ok(TransitionOutcome::NeedsAsync(AsyncWork::CreateWildernessArea {
+      parent_entity,
+      area_x: target_x,
+      area_y: target_y,
+      width: current_spatial.get_width(),
+      length: current_spatial.get_length(),
+      crossing,
+    }))
+  }
+
+  fn enter_wilderness_from_boundary(
+    &mut self,
+    wilderness_entity: Entity,
+    crossing: WildernessCrossing,
+    entity_manager: &EntityManager,
+  ) -> Result<TransitionOutcome> {
+    let target_spatial = entity_manager.get_component::<Spatial, _>(wilderness_entity)?.get();
+    let arrival = wilderness_arrival(
+      crossing,
+      target_spatial.get_width(),
+      target_spatial.get_length(),
+    );
+    let mut outcome = self.enter(wilderness_entity, None, entity_manager)?;
+    if let TransitionOutcome::Ok(ref mut transition) = outcome {
+      transition.player_pos = arrival;
+      if let Some(area) = self.current_area_mut() {
+        area.remove_feature(arrival.0, arrival.1);
+      }
+    }
+    Ok(outcome)
   }
 
   fn exit_wilderness(
@@ -412,28 +503,36 @@ impl ViewManager {
     entity_manager: &EntityManager,
   ) -> Result<TransitionOutcome> {
     let origin = self.current_entity();
-    let AsyncWork::CreateLocation {
-      parent_entity,
-      location_type,
-    } = work;
-    let entity = self
-      .ensure_child_location(parent_entity, location_type.clone(), entity_manager)
-      .await?;
-
-    if location_type == LocationType::Dungeon {
-      if let Some(pos) = self.current_area().and_then(|area| area.stairs_down) {
-        self.bind_dungeon_to_current_poi(pos, entity);
+    match work {
+      AsyncWork::CreateLocation{parent_entity, location_type} => {
+        let entity = self
+          .ensure_child_location(parent_entity, location_type.clone(), entity_manager)
+          .await?;
+        if location_type == LocationType::Dungeon {
+          if let Some(pos) = self.current_area().and_then(|area| area.stairs_down) {
+            self.bind_dungeon_to_current_poi(pos, entity);
+          }
+        }
+        info!(?location_type, ?entity, "created child location");
+        self.enter(entity, None, entity_manager)
+      }
+      AsyncWork::CreateWildernessArea{
+        parent_entity, area_x, area_y, width, length, crossing,
+      } => {
+        let entity = self.ensure_wilderness_area(
+          parent_entity, area_x, area_y, width, length, entity_manager,
+        ).await?;
+        if let Some(dungeon_entity) = origin.filter(|origin| entity_manager.has::<Dungeon>(*origin)) {
+          return self.enter_wilderness_from_dungeon(entity, dungeon_entity, entity_manager);
+        }
+        info!(?entity, area_x, area_y, "created wilderness area");
+        if crossing.area_dx == 0 && crossing.area_dy == 0 {
+          self.enter(entity, None, entity_manager)
+        } else {
+          self.enter_wilderness_from_boundary(entity, crossing, entity_manager)
+        }
       }
     }
-
-    if location_type == LocationType::Wilderness {
-      if let Some(dungeon_entity) = origin.filter(|origin| entity_manager.has::<Dungeon>(*origin)) {
-        return self.enter_wilderness_from_dungeon(entity, dungeon_entity, entity_manager);
-      }
-    }
-
-    info!(?location_type, ?entity, "created child location");
-    self.enter(entity, None, entity_manager)
   }
 
   async fn ensure_child_location(
@@ -453,7 +552,6 @@ impl ViewManager {
     let hex_id = hex_location.get_id()?;
 
     let existing = match location_type {
-      LocationType::Wilderness => entity_manager.find_child_entity::<Wilderness>(hex_id),
       LocationType::Dungeon => entity_manager.find_child_entity::<Dungeon>(hex_id),
       _ => return Err(ViewError::UnsupportedLocationType(location_type).into()),
     };
@@ -471,11 +569,6 @@ impl ViewManager {
     );
 
     match location_type {
-      LocationType::Wilderness => entity_manager.create(WildernessSeed{
-        x: hex_spatial.get_x(),
-        y: hex_spatial.get_y(),
-        parent_location_id: Some(hex_id),
-      }).await,
       LocationType::Dungeon => entity_manager.create(DungeonSeed{
         seed,
         depth_levels: 3,
@@ -486,10 +579,154 @@ impl ViewManager {
       _ => unreachable!(),
     }
   }
+
+  async fn ensure_wilderness_area(
+    &self,
+    parent_entity: Entity,
+    area_x: i32,
+    area_y: i32,
+    width: i32,
+    length: i32,
+    entity_manager: &EntityManager,
+  ) -> Result<Entity> {
+    let parent_id = entity_manager
+      .get_component::<Location, _>(parent_entity)
+      .context("failed to get wilderness parent location")?
+      .get()
+      .get_id()?;
+    let area_key = wilderness_area_key(area_x, area_y);
+    if let Some(entity) = entity_manager.find_wilderness_area(parent_id, &area_key) {
+      return Ok(entity);
+    }
+    entity_manager.create(WildernessAreaSeed{
+      area_key,
+      x: area_x,
+      y: area_y,
+      width,
+      length,
+      parent_location_id: Some(parent_id),
+    }).await
+  }
+}
+
+fn wilderness_area_key(x: i32, y: i32) -> String {
+  if x == 0 && y == 0 {
+    "origin".to_string()
+  } else {
+    format!("grid:{x}:{y}")
+  }
+}
+
+fn wilderness_arrival(crossing: WildernessCrossing, width: i32, length: i32) -> Pos {
+  let x = match crossing.area_dx {
+    value if value < 0 => width - 1,
+    value if value > 0 => 0,
+    _ => crossing.attempted_tile.0.clamp(0, width - 1),
+  };
+  let y = match crossing.area_dy {
+    value if value < 0 => length - 1,
+    value if value > 0 => 0,
+    _ => crossing.attempted_tile.1.clamp(0, length - 1),
+  };
+  (x, y)
 }
 
 impl Default for ViewManager {
   fn default() -> Self {
     Self::new()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::sync::{Arc, Mutex};
+  use dagr_lib::{
+    components::world::{
+      hex::{Hex, HexData},
+      location::LocationData,
+      spatial::SpatialData,
+      wilderness::WildernessData,
+    },
+    core::registry::FactoryRegistry,
+  };
+  use hecs::World;
+  use serde_json::json;
+
+  fn location(id: i32, location_type: &str, parent: Option<i32>, seed: i64) -> Location {
+    Location::new(serde_json::from_value::<LocationData>(json!({
+      "id":id,"name":"test","description":"test","location_type":location_type,
+      "location_status":"Unexplored","parent_location_id":parent,"is_persistent":true,
+      "is_discoverable":true,"discovery_text":null,"seed":seed
+    })).unwrap())
+  }
+  fn spatial(location_id: i32, x: i32, y: i32, width: i32, length: i32, container: Option<i32>) -> Spatial {
+    Spatial::new(serde_json::from_value::<SpatialData>(json!({
+      "id":location_id,"location_id":location_id,"x":x,"y":y,"z":null,
+      "width":width,"length":length,"height":null,"container_id":container,
+      "traversable":true,"movement_cost":1
+    })).unwrap())
+  }
+  fn wilderness(id: i32, location_id: i32, parent: i32, key: &str) -> Wilderness {
+    Wilderness::new(serde_json::from_value::<WildernessData>(json!({
+      "id":id,"location_id":location_id,"parent_location_id":parent,
+      "area_key":key,"feature":"test"
+    })).unwrap())
+  }
+
+  #[test]
+  fn wilderness_area_keys_are_stable_and_origin_is_named() {
+    assert_eq!(wilderness_area_key(0, 0), "origin");
+    assert_eq!(wilderness_area_key(-2, 3), "grid:-2:3");
+  }
+
+  #[test]
+  fn existing_wilderness_siblings_can_be_traversed_in_both_directions() {
+    let mut world = World::new();
+    let hex_data: HexData = serde_json::from_value(json!({
+      "id":1,"location_id":1,"terrain":1,"vegetation":1,"water":1,"poi":1,
+      "climate":1,"region_id":null,"danger_level":1,"resource_richness":1
+    })).unwrap();
+    let hex = world.spawn((Hex::new(hex_data), location(1, "Hex", None, 100), spatial(1, 7, 8, 1, 1, None)));
+    let origin = world.spawn((wilderness(1, 2, 1, "origin"), location(2, "Wilderness", Some(1), 101), spatial(2, 0, 0, 10, 10, Some(1))));
+    let east = world.spawn((wilderness(2, 3, 1, "grid:1:0"), location(3, "Wilderness", Some(1), 102), spatial(3, 1, 0, 10, 10, Some(1))));
+    let manager = EntityManager::from_world(Arc::new(Mutex::new(world)), Arc::new(FactoryRegistry::new()));
+    let mut views = ViewManager::new();
+    assert!(matches!(views.enter_entity(hex, &manager).unwrap(), TransitionOutcome::Ok(_)));
+    assert_eq!(views.current_entity(), Some(origin));
+
+    let eastward = views.transition(
+      TransitionIntent::CrossWildernessBoundary{target:(10, 5)}, (9, 5), &manager,
+    ).unwrap();
+    let TransitionOutcome::Ok(eastward) = eastward else{panic!("expected east transition")};
+    assert_eq!(eastward.player_pos, (0, 5));
+    assert_eq!(views.current_entity(), Some(east));
+
+    let westward = views.transition(
+      TransitionIntent::CrossWildernessBoundary{target:(-1, 5)}, (0, 5), &manager,
+    ).unwrap();
+    let TransitionOutcome::Ok(westward) = westward else{panic!("expected west transition")};
+    assert_eq!(westward.player_pos, (9, 5));
+    assert_eq!(views.current_entity(), Some(origin));
+  }
+
+  #[test]
+  fn wilderness_crossings_arrive_on_opposite_edges() {
+    assert_eq!(
+      wilderness_arrival(
+        WildernessCrossing{area_dx: 1, area_dy: 0, attempted_tile: (10, 4)},
+        10,
+        10,
+      ),
+      (0, 4),
+    );
+    assert_eq!(
+      wilderness_arrival(
+        WildernessCrossing{area_dx: -1, area_dy: -1, attempted_tile: (-1, -1)},
+        12,
+        8,
+      ),
+      (11, 7),
+    );
   }
 }

@@ -1,5 +1,10 @@
 use anyhow::{Result, anyhow};
-use dagr_lib::components::world::{hex::Hex, spatial::Spatial};
+use dagr_lib::components::world::{
+  hex::Hex,
+  location::Location,
+  spatial::Spatial,
+  wilderness::Wilderness,
+};
 use dagr_lib::ems::{component::Component, entity_manager::EntityManager};
 use dagr_lib::factories::world::{dungeon::DungeonSeed, hex::HexSeed};
 use tracing::info;
@@ -54,6 +59,36 @@ impl GameState {
     }
   }
 
+  pub fn coordinate_debug_lines(&self) -> Vec<String> {
+    if self.view_manager.is_in_world() {
+      return vec![
+        format!("hex: ({}, {})", self.player_x, self.player_y),
+        "area: world map".to_string(),
+        format!("tile: ({}, {})", self.player_x, self.player_y),
+      ]
+    }
+
+    let Some(entity) = self.view_manager.current_entity() else{
+      return vec![format!("tile: ({}, {})", self.player_x, self.player_y)]
+    };
+    let area = self.entity_manager.get_component::<Spatial, _>(entity).ok().map(|spatial| spatial.get());
+    let hex_coords = self.entity_manager.get_component::<Location, _>(entity).ok()
+      .and_then(|location| location.get().get_parent_location_id().ok().flatten())
+      .and_then(|parent| self.entity_manager.find_entity_by_location_id::<Hex>(parent))
+      .and_then(|hex| self.entity_manager.get_component::<Spatial, _>(hex).ok())
+      .map(|spatial| {
+        let spatial = spatial.get();
+        (spatial.get_x(), spatial.get_y())
+      });
+    vec![
+      hex_coords.map(|(x, y)| format!("hex: ({x}, {y})"))
+        .unwrap_or_else(|| "hex: n/a".to_string()),
+      area.map(|area| format!("area: ({}, {})", area.get_x(), area.get_y()))
+        .unwrap_or_else(|| "area: n/a".to_string()),
+      format!("tile: ({}, {})", self.player_x, self.player_y),
+    ]
+  }
+
   pub fn update_visibility(&mut self) {
     if let Some(area) = self.view_manager.current_area_mut() {
       area.update_visibility(self.player_x, self.player_y);
@@ -71,24 +106,39 @@ impl GameState {
     let new_x = self.player_x + dx;
     let new_y = self.player_y + dy;
 
-    let can_move = if self.view_manager.is_in_world() {
+    if self.view_manager.is_in_world() {
       if self.map.get((new_x, new_y)).is_none() {
         self.generate_hex_at(new_x, new_y).await?;
       }
-      true
-    } else {
-      self
-        .view_manager
-        .current_area()
-        .is_some_and(|area| area.is_walkable(new_x, new_y))
-    };
-
-    if can_move {
       self.player_x = new_x;
       self.player_y = new_y;
       self.camera.center_on(new_x, new_y);
+      return Ok(())
     }
 
+    let Some(area) = self.view_manager.current_area() else{return Ok(())};
+    if area.in_bounds(new_x, new_y) {
+      if area.is_walkable(new_x, new_y) {
+        self.player_x = new_x;
+        self.player_y = new_y;
+        self.camera.center_on(new_x, new_y);
+      }
+      return Ok(())
+    }
+
+    if self
+      .view_manager
+      .current_entity()
+      .is_some_and(|entity| self.entity_manager.has::<Wilderness>(entity))
+    {
+      let outcome = self.view_manager.transition(
+        TransitionIntent::CrossWildernessBoundary{target: (new_x, new_y)},
+        (self.player_x, self.player_y),
+        &self.entity_manager,
+      )?;
+      self.resolve_transition(outcome).await?;
+      info!(coordinates = %self.coordinate_debug_lines().join(" | "), "crossed wilderness area boundary");
+    }
     Ok(())
   }
 

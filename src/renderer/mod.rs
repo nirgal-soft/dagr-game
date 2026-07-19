@@ -84,16 +84,13 @@ impl Renderer{
     stat_bar.draw(stdout)?;
 
     let hexes_explored = game_state.map.count();
-    let stats = vec![
-      format!("pos: ({}, {})", game_state.player_x, game_state.player_y),
-      format!("cam: ({}, {})", game_state.camera.x, game_state.camera.y),
+    let mut stats = game_state.coordinate_debug_lines();
+    stats.extend([
       format!("explored: {}", hexes_explored),
       format!("view: {}", game_state.current_view_label()),
-      "STR: 14".to_string(),
-      "DEX: 16".to_string(),
-      "CON: 12".to_string(),
-    ];
-    let mut stats_panel = Panel::new(21, self.map_height, 20, 8);
+      format!("cam: ({}, {})", game_state.camera.x, game_state.camera.y),
+    ]);
+    let mut stats_panel = Panel::new(21, self.map_height, 28, 8);
     stats_panel.set_title("Stats".to_string());
     stats_panel.set_content(stats);
     stats_panel.draw(stdout)?;
