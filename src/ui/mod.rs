@@ -1,6 +1,8 @@
 pub mod bar;
 pub mod border_style;
+pub mod command_line;
 pub mod map;
+pub mod monster_picker;
 pub mod panel;
 pub mod popup;
 pub mod stat_bar;
@@ -27,6 +29,10 @@ pub fn draw_box(
   h: u16,
   style: BorderStyle,
 ) -> Result<()>{
+  if w < 2 || h < 2{
+    return Ok(());
+  }
+
   //top
   queue!(stdout, cursor::MoveTo(x, y))?;
   write!(stdout, "{}", style.top_left)?;

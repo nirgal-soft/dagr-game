@@ -1,15 +1,10 @@
 use std::io::{self, Write};
+
 use anyhow::Result;
 use crossterm::{
-  cursor, 
-  queue, 
-  style::{
-    Color, 
-    SetForegroundColor,
-    SetBackgroundColor,
-  },
+  cursor, queue,
+  style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
 };
-use super::bar::Bar;
 
 pub struct StatBar{
   pub x: u16,
@@ -17,49 +12,36 @@ pub struct StatBar{
   pub label: String,
   pub current: u32,
   pub max: u32,
-  pub bar_width: u16
+  pub bar_width: u16,
 }
 
 impl StatBar{
-  pub fn new(x: u16, y: u16, label: String, current: u32, max: u32, bar_width: u16) -> Self{
-    Self{
-      x,
-      y,
-      label,
-      current,
-      max,
-      bar_width,
-    }
+  pub fn new(x:u16,y:u16,label:String,current:u32,max:u32,bar_width:u16)->Self{
+    Self{x,y,label,current,max,bar_width}
   }
 
-  pub fn draw(&self, stdout: &mut io::Stdout) -> Result<()>{
-    //raw the label
-    queue!(
-      stdout,
-      cursor::MoveTo(self.x, self.y),
-      SetForegroundColor(Color::White),
-    )?;
-    write!(stdout, "{}: ", self.label)?;
+  pub fn draw(&self,stdout:&mut io::Stdout)->Result<()>{
+    let ratio=if self.max==0{0.0}else{self.current as f32/self.max as f32};
+    let filled=(ratio*self.bar_width as f32).round() as u16;
+    let color=if ratio > 0.5{Color::Green}else if ratio > 0.25{Color::Yellow}else{Color::Red};
+    let value=if self.max==0{"-- / --".to_string()}else{format!("{} / {}",self.current,self.max)};
+    let width=(self.bar_width+12).max(30) as usize;
+    let title=format!(" ♥ {} ",self.label);
 
-    let label_len = self.label.len() + 2;
-    let bar_x = self.x + label_len as u16;
+    queue!(stdout,cursor::MoveTo(self.x,self.y),SetForegroundColor(Color::DarkGrey))?;
+    write!(stdout,"╭{}{}╮",title,"─".repeat(width.saturating_sub(title.chars().count())))?;
 
-    //draw the bar
-    let bar = Bar::new(
-      bar_x, self.y,
-      self.bar_width,
-      self.current,
-      self.max,
-      Color::Green
-    );
-    bar.draw(stdout)?;
+    queue!(stdout,cursor::MoveTo(self.x,self.y+1),SetForegroundColor(Color::DarkGrey))?;
+    write!(stdout,"│ [")?;
+    queue!(stdout,SetForegroundColor(color),SetAttribute(Attribute::Bold))?;
+    write!(stdout,"{}","█".repeat(filled as usize))?;
+    queue!(stdout,SetForegroundColor(Color::DarkGrey),SetAttribute(Attribute::Reset))?;
+    write!(stdout,"{}","·".repeat(self.bar_width.saturating_sub(filled) as usize))?;
+    write!(stdout,"] {:>7} │",value)?;
 
-    //draw the value
-    let value_text = format!("{}/{}", self.current, self.max);
-    let value_x = bar_x + self.bar_width + 1;
-    queue!(stdout, cursor::MoveTo(value_x, self.y))?;
-    write!(stdout, "{}", value_text)?;
-
+    queue!(stdout,cursor::MoveTo(self.x,self.y+2),SetForegroundColor(Color::DarkGrey))?;
+    write!(stdout,"╰{}╯","─".repeat(width))?;
+    queue!(stdout,ResetColor)?;
     Ok(())
   }
 }

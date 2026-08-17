@@ -3,13 +3,7 @@ use anyhow::Result;
 use crossterm::{
   cursor, 
   queue, 
-  style::{
-    Attribute,
-    Color,
-    SetAttribute,
-    SetForegroundColor,
-    SetBackgroundColor,
-  },
+  style::{Attribute, SetAttribute},
 };
 use super::{draw_box, border_style::BorderStyle};
 
@@ -74,11 +68,7 @@ impl Panel{
       let content_y = self.y + 1 + i as u16;
       let content_x = self.x + 1;
 
-      let display_line = if line.len() > content_area_width{
-        &line[..content_area_width]
-      }else{
-        line
-      };
+      let display_line = line.chars().take(content_area_width).collect::<String>();
 
       queue!(stdout, cursor::MoveTo(content_x, content_y))?;
       write!(stdout, "{:<width$}", display_line, width = content_area_width)?;

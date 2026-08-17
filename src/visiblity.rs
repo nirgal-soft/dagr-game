@@ -8,6 +8,7 @@ pub enum Visibility{
   Visible,
 }
 
+#[derive(Clone, Debug)]
 pub struct VisibilityMap{
   visible: HashSet<(i32, i32)>,
   seen: HashSet<(i32, i32)>,

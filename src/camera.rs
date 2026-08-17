@@ -20,6 +20,11 @@ impl Camera{
     self.y = world_y - (self.view_h/2);
   }
 
+  pub fn pan_when_border_reached(&mut self, world_x:i32, world_y:i32){
+    self.x=pan_axis(self.x,self.view_w,world_x);
+    self.y=pan_axis(self.y,self.view_h,world_y);
+  }
+
   pub fn world_to_screen(&self, world_x: i32, world_y: i32) -> Option<(u16, u16)>{
     let screen_x = world_x - self.x;
     let screen_y = world_y - self.y;
@@ -29,5 +34,30 @@ impl Camera{
     }else{
       None
     }
+  }
+}
+
+fn pan_axis(origin:i32,extent:i32,target:i32)->i32{
+  if extent<=2{return origin}
+  if target<=origin || target>=origin+extent-1{
+    target-(extent/2)
+  }else{
+    origin
+  }
+}
+
+#[cfg(test)]
+mod tests{
+  use super::*;
+
+  #[test]
+  fn look_panning_waits_for_viewport_border(){
+    let mut camera=Camera::new(10,8);
+    camera.pan_when_border_reached(5,4);
+    assert_eq!((camera.x,camera.y),(0,0));
+    camera.pan_when_border_reached(9,4);
+    assert_eq!((camera.x,camera.y),(4,0));
+    camera.pan_when_border_reached(4,4);
+    assert_eq!((camera.x,camera.y),(-1,0));
   }
 }
