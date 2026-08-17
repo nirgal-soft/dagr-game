@@ -1,5 +1,5 @@
 use super::Ground;
-use dagr_lib::components::world::location::LocationType;
+use dagr_lib::world::LocationKind;
 
 pub struct LocationConfig {
   pub ground: Ground,
@@ -8,14 +8,14 @@ pub struct LocationConfig {
 }
 
 impl LocationConfig {
-  pub fn for_type(location_type: LocationType) -> Self {
+  pub fn for_type(location_type: LocationKind) -> Self {
     match location_type {
-      LocationType::Dungeon => Self {
+      LocationKind::Dungeon => Self {
         ground: Ground::DUNGEON,
         has_fov: true,
         has_levels: true,
       },
-      LocationType::Wilderness => Self {
+      LocationKind::Wilderness => Self {
         ground: Ground::WILDERNESS,
         has_fov: true,
         has_levels: false,

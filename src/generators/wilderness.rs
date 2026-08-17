@@ -1,46 +1,84 @@
 use anyhow::Result;
-use dagr_lib::{
-  components::world::hex::HexData,
-  kits::hexkit::terrain::{Terrain, Vegetation, Water},
-};
+use dagr_lib::world::HexProfile;
 use rand::{Rng, SeedableRng, rngs::StdRng};
+
 use crate::areas::{Area, Feature, Ground, Pos};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerrainProfile {
+  Mountains,
+  Hills,
+  Plains,
+  Swamp,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VegetationProfile {
+  DenseForest,
+  LightForest,
+  Grassland,
+  Barren,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WaterProfile {
+  Lake,
+  River,
+  Dry,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WildernessProfile {
-  pub terrain: Terrain,
-  pub vegetation: Vegetation,
-  pub water: Water,
+  pub terrain: TerrainProfile,
+  pub vegetation: VegetationProfile,
+  pub water: WaterProfile,
 }
 
 impl WildernessProfile {
-  pub fn from_hex(hex: &HexData) -> Result<Self> {
-    Ok(Self {
-      terrain: hex.get_terrain()?,
-      vegetation: hex.get_vegetation()?,
-      water: hex.get_water()?,
-    })
+  pub fn from_hex(profile: &HexProfile) -> Self {
+    Self {
+      terrain: match short_name(profile.terrain.as_str()) {
+        "mountains" => TerrainProfile::Mountains,
+        "plains" => TerrainProfile::Plains,
+        "swamp" => TerrainProfile::Swamp,
+        _ => TerrainProfile::Hills,
+      },
+      vegetation: match short_name(profile.vegetation.as_str()) {
+        "dense_forest" => VegetationProfile::DenseForest,
+        "grassland" => VegetationProfile::Grassland,
+        "barren" => VegetationProfile::Barren,
+        _ => VegetationProfile::LightForest,
+      },
+      water: match short_name(profile.water.as_str()) {
+        "lake" => WaterProfile::Lake,
+        "river" => WaterProfile::River,
+        _ => WaterProfile::Dry,
+      },
+    }
   }
 
   fn ground(self) -> Ground {
     match self.terrain {
-      Terrain::Mountains => Ground::MOUNTAIN,
-      Terrain::Hills => Ground::HILLS,
-      Terrain::Plains => Ground::PLAINS,
-      Terrain::Swamp => Ground::SWAMP,
+      TerrainProfile::Mountains => Ground::MOUNTAIN,
+      TerrainProfile::Hills => Ground::HILLS,
+      TerrainProfile::Plains => Ground::PLAINS,
+      TerrainProfile::Swamp => Ground::SWAMP,
     }
   }
-
 }
 
 impl Default for WildernessProfile {
   fn default() -> Self {
     Self {
-      terrain: Terrain::Hills,
-      vegetation: Vegetation::LightForest,
-      water: Water::Dry,
+      terrain: TerrainProfile::Hills,
+      vegetation: VegetationProfile::LightForest,
+      water: WaterProfile::Dry,
     }
   }
+}
+
+fn short_name(key: &str) -> &str {
+  key.rsplit(':').next().unwrap_or(key)
 }
 
 pub struct WildernessGenerator {
@@ -50,11 +88,17 @@ pub struct WildernessGenerator {
 
 impl WildernessGenerator {
   pub fn new(seed: u64) -> Self {
-    Self { seed, profile: WildernessProfile::default() }
+    Self {
+      seed,
+      profile: WildernessProfile::default(),
+    }
   }
 
-  pub fn for_hex(seed: u64, hex: &HexData) -> Result<Self> {
-    Ok(Self { seed, profile: WildernessProfile::from_hex(hex)? })
+  pub fn for_hex(seed: u64, profile: &HexProfile) -> Self {
+    Self {
+      seed,
+      profile: WildernessProfile::from_hex(profile),
+    }
   }
 
   pub fn generate(&self, width: i32, height: i32) -> Result<Area> {
@@ -76,10 +120,10 @@ impl WildernessGenerator {
   fn paint_vegetation(&self, area: &mut Area, rng: &mut StdRng) {
     let scale = ((area.width * area.height) / 1200).max(1);
     let (blobs, steps, brush): (i32, i32, i32) = match self.profile.vegetation {
-      Vegetation::DenseForest => (scale * 4, 28, 2),
-      Vegetation::LightForest => (scale * 3, 20, 2),
-      Vegetation::Grassland => (scale, 10, 1),
-      Vegetation::Barren => (0, 0, 0),
+      VegetationProfile::DenseForest => (scale * 4, 28, 2),
+      VegetationProfile::LightForest => (scale * 3, 20, 2),
+      VegetationProfile::Grassland => (scale, 10, 1),
+      VegetationProfile::Barren => (0, 0, 0),
     };
     paint_blobs(
       area,
@@ -95,10 +139,10 @@ impl WildernessGenerator {
   fn paint_terrain(&self, area: &mut Area, rng: &mut StdRng) {
     let scale = ((area.width * area.height) / 1400).max(1);
     let (blobs, steps, brush): (i32, i32, i32) = match self.profile.terrain {
-      Terrain::Mountains => (scale * 4, 24, 2),
-      Terrain::Hills => (scale * 2, 16, 2),
-      Terrain::Plains => (scale, 7, 1),
-      Terrain::Swamp => (scale, 8, 1),
+      TerrainProfile::Mountains => (scale * 4, 24, 2),
+      TerrainProfile::Hills => (scale * 2, 16, 2),
+      TerrainProfile::Plains => (scale, 7, 1),
+      TerrainProfile::Swamp => (scale, 8, 1),
     };
     paint_blobs(
       area,
@@ -113,16 +157,16 @@ impl WildernessGenerator {
 
   fn paint_water(&self, area: &mut Area, rng: &mut StdRng) {
     match self.profile.water {
-      Water::Lake => {
+      WaterProfile::Lake => {
         let scale = ((area.width * area.height) / 1800).max(1);
         paint_blobs(area, rng, Feature::WATER, scale * 2, 42, 3);
       }
-      Water::River => paint_river(area, rng),
-      Water::Dry if self.profile.terrain == Terrain::Swamp => {
+      WaterProfile::River => paint_river(area, rng),
+      WaterProfile::Dry if self.profile.terrain == TerrainProfile::Swamp => {
         let scale = ((area.width * area.height) / 1600).max(1);
         paint_blobs(area, rng, Feature::WATER, scale * 2, 20, 2);
       }
-      Water::Dry => {}
+      WaterProfile::Dry => {}
     }
   }
 
@@ -223,7 +267,6 @@ mod tests {
       .count()
   }
 
-
   #[test]
   fn generation_is_deterministic_with_natural_open_edges() {
     let generator = WildernessGenerator::new(1234);
@@ -246,9 +289,9 @@ mod tests {
     let dense = WildernessGenerator {
       seed: 77,
       profile: WildernessProfile {
-        terrain: Terrain::Hills,
-        vegetation: Vegetation::DenseForest,
-        water: Water::Dry,
+        terrain: TerrainProfile::Hills,
+        vegetation: VegetationProfile::DenseForest,
+        water: WaterProfile::Dry,
       },
     }
     .generate(64, 40)
@@ -256,9 +299,9 @@ mod tests {
     let plains = WildernessGenerator {
       seed: 77,
       profile: WildernessProfile {
-        terrain: Terrain::Plains,
-        vegetation: Vegetation::Grassland,
-        water: Water::Dry,
+        terrain: TerrainProfile::Plains,
+        vegetation: VegetationProfile::Grassland,
+        water: WaterProfile::Dry,
       },
     }
     .generate(64, 40)
@@ -269,12 +312,12 @@ mod tests {
 
   #[test]
   fn river_and_lake_profiles_create_coherent_water() {
-    for water in [Water::River, Water::Lake] {
+    for water in [WaterProfile::River, WaterProfile::Lake] {
       let area = WildernessGenerator {
         seed: 99,
         profile: WildernessProfile {
-          terrain: Terrain::Plains,
-          vegetation: Vegetation::Grassland,
+          terrain: TerrainProfile::Plains,
+          vegetation: VegetationProfile::Grassland,
           water,
         },
       }

@@ -1,16 +1,18 @@
 use std::{io, sync::Arc, time::Duration};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crossterm::{
   cursor,
   event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
   execute,
   terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use dagr_lib::agency::{
-  ActorContextBuilder, ActorDirectoryEntry, ToolCall, ToolDefinition, ToolInvocation, ToolRouter,
-  events::{ActorScope, EngineEvent, load_actor_events},
-  load_actor_directory,
+use dagr_lib::{
+  Engine,
+  agency::{
+    ActorEventFilter, ActorEventView, ActorFilter, ActorScope, ActorSummary, CreativeSnapshotQuery,
+    InvokeTool, ToolCall, ToolView,
+  },
 };
 use ratatui::{
   Frame, Terminal,
@@ -21,7 +23,6 @@ use ratatui::{
   widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 use serde_json::{Map, Value, json};
-use sqlx::PgPool;
 
 struct TuiGuard;
 impl Drop for TuiGuard {
@@ -49,15 +50,15 @@ enum SearchMode {
 }
 
 struct DebugApp {
-  actors: Vec<ActorDirectoryEntry>,
+  actors: Vec<ActorSummary>,
   actor_cursor: usize,
   actor_filter: String,
   actor: ActorScope,
-  tools: Vec<ToolDefinition>,
+  tools: Vec<ToolView>,
   tool_cursor: usize,
   tool_filter: String,
   context: Value,
-  events: Vec<EngineEvent>,
+  events: Vec<ActorEventView>,
   focus: Focus,
   detail_view: DetailView,
   detail_scroll: u16,
@@ -69,19 +70,21 @@ struct DebugApp {
 }
 
 impl DebugApp {
-  async fn load(
-    pool: &PgPool,
-    router: &ToolRouter,
-    contexts: &ActorContextBuilder,
-  ) -> Result<Self> {
-    let actors = load_actor_directory(pool).await?;
+  async fn load(engine: &Engine) -> Result<Self> {
+    let actors = engine.agency().actors(ActorFilter::default()).await?;
     let actor = actors
       .first()
       .map(|entry| entry.actor)
       .unwrap_or(ActorScope::Gm);
-    let tools = router.definitions(actor);
-    let context = contexts.build(actor).await?;
-    let events = load_actor_events(pool, actor).await?;
+    let tools = engine.agency().tools().await?;
+    let context = actor_context(engine, actor).await?;
+    let events = engine
+      .agency()
+      .actor_events(ActorEventFilter {
+        actor: Some(actor),
+        ..ActorEventFilter::default()
+      })
+      .await?;
     Ok(Self {
       actors,
       actor_cursor: 0,
@@ -133,34 +136,35 @@ impl DebugApp {
       .collect()
   }
 
-  async fn activate_actor(
-    &mut self,
-    pool: &PgPool,
-    router: &ToolRouter,
-    contexts: &ActorContextBuilder,
-  ) -> Result<()> {
+  async fn activate_actor(&mut self, engine: &Engine) -> Result<()> {
     let filtered = self.filtered_actor_indices();
     let Some(index) = filtered.get(self.actor_cursor).copied() else {
       return Ok(());
     };
     self.actor = self.actors[index].actor;
-    self.tools = router.definitions(self.actor);
+    self.tools = engine.agency().tools().await?;
     self.tool_cursor = 0;
     self.tool_filter.clear();
-    self.refresh(pool, contexts).await?;
+    self.refresh(engine).await?;
     self.focus = Focus::Tools;
     self.status = format!("Acting as {}", self.actors[index].name);
     Ok(())
   }
 
-  async fn refresh(&mut self, pool: &PgPool, contexts: &ActorContextBuilder) -> Result<()> {
-    self.context = contexts.build(self.actor).await?;
-    self.events = load_actor_events(pool, self.actor).await?;
+  async fn refresh(&mut self, engine: &Engine) -> Result<()> {
+    self.context = actor_context(engine, self.actor).await?;
+    self.events = engine
+      .agency()
+      .actor_events(ActorEventFilter {
+        actor: Some(self.actor),
+        ..ActorEventFilter::default()
+      })
+      .await?;
     self.detail_scroll = 0;
     Ok(())
   }
 
-  fn selected_tool(&self) -> Option<&ToolDefinition> {
+  fn selected_tool(&self) -> Option<&ToolView> {
     let filtered = self.filtered_tool_indices();
     filtered
       .get(self.tool_cursor)
@@ -209,13 +213,33 @@ impl DebugApp {
   }
 }
 
+async fn actor_context(engine: &Engine, actor: ActorScope) -> Result<Value> {
+  let value = match actor {
+    ActorScope::Gm => serde_json::to_value(
+      engine
+        .agency()
+        .creative_snapshot(CreativeSnapshotQuery {
+          include_gm_only_facts: true,
+        })
+        .await?,
+    )?,
+    ActorScope::Npc(character_id) => {
+      serde_json::to_value(engine.agency().npc_profile(character_id).await?)?
+    }
+    ActorScope::Faction(faction_id) => {
+      serde_json::to_value(engine.agency().faction(faction_id).await?)?
+    }
+  };
+  Ok(value)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DebugDestination {
   MainMenu,
   ScenePlayground,
 }
 
-pub async fn run(pool: Arc<PgPool>) -> Result<DebugDestination> {
+pub async fn run(engine: Arc<Engine>) -> Result<DebugDestination> {
   terminal::enable_raw_mode()?;
   execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)?;
   let _guard = TuiGuard;
@@ -223,9 +247,7 @@ pub async fn run(pool: Arc<PgPool>) -> Result<DebugDestination> {
   let mut terminal = Terminal::new(backend)?;
   terminal.clear()?;
 
-  let router = ToolRouter::new(pool.clone());
-  let contexts = ActorContextBuilder::new(pool.clone());
-  let mut app = DebugApp::load(pool.as_ref(), &router, &contexts).await?;
+  let mut app = DebugApp::load(&engine).await?;
 
   loop {
     terminal.draw(|frame| draw(frame, &app))?;
@@ -244,17 +266,19 @@ pub async fn run(pool: Arc<PgPool>) -> Result<DebugDestination> {
       continue;
     }
     if app.form.is_some() {
-      if handle_form_key(&mut app, key, pool.as_ref(), &router, &contexts).await? {
+      if handle_form_key(&mut app, key, &engine).await? {
         continue;
       }
     }
     if app.search.is_some() {
-      handle_search_key(&mut app, key, pool.as_ref(), &router, &contexts).await?;
+      handle_search_key(&mut app, key, &engine).await?;
       continue;
     }
     match key.code {
       KeyCode::Char('q') | KeyCode::Esc => return Ok(DebugDestination::MainMenu),
-      KeyCode::Char('l') | KeyCode::Char('L') => return Ok(DebugDestination::ScenePlayground),
+      KeyCode::Char('l') | KeyCode::Char('L') => {
+        return Ok(DebugDestination::ScenePlayground);
+      }
       KeyCode::Char('?') => app.help = true,
       KeyCode::Char('/') => {
         app.search = Some(if app.focus == Focus::Actors {
@@ -277,9 +301,9 @@ pub async fn run(pool: Arc<PgPool>) -> Result<DebugDestination> {
         };
         app.detail_scroll = 0;
       }
-      KeyCode::Char('d') => match crate::debug_scenario::create(pool.clone()).await {
+      KeyCode::Char('d') => match crate::debug_scenario::create(engine.clone()).await {
         Ok(scenario) => {
-          app.actors = load_actor_directory(pool.as_ref()).await?;
+          app.actors = engine.agency().actors(ActorFilter::default()).await?;
           app.status = format!(
             "Demo ready — NPC {}, target {}, Faction {}, Danger {}",
             scenario.npc_id, scenario.target_id, scenario.faction_id, scenario.danger_id
@@ -287,13 +311,13 @@ pub async fn run(pool: Arc<PgPool>) -> Result<DebugDestination> {
         }
         Err(error) => app.status = format!("Could not create demo: {error:#}"),
       },
-      KeyCode::Char('r') => match app.refresh(pool.as_ref(), &contexts).await {
+      KeyCode::Char('r') => match app.refresh(&engine).await {
         Ok(()) => app.status = "Canonical state refreshed.".to_string(),
         Err(error) => app.status = format!("Refresh failed: {error:#}"),
       },
       KeyCode::Enter => match app.focus {
         Focus::Actors => {
-          if let Err(error) = app.activate_actor(pool.as_ref(), &router, &contexts).await {
+          if let Err(error) = app.activate_actor(&engine).await {
             app.status = format!("Could not select actor: {error:#}")
           }
         }
@@ -315,13 +339,7 @@ pub async fn run(pool: Arc<PgPool>) -> Result<DebugDestination> {
   }
 }
 
-async fn handle_search_key(
-  app: &mut DebugApp,
-  key: KeyEvent,
-  pool: &PgPool,
-  router: &ToolRouter,
-  contexts: &ActorContextBuilder,
-) -> Result<()> {
+async fn handle_search_key(app: &mut DebugApp, key: KeyEvent, engine: &Engine) -> Result<()> {
   let mode = app.search.expect("search mode");
   let query = if mode == SearchMode::Actors {
     &mut app.actor_filter
@@ -336,7 +354,7 @@ async fn handle_search_key(
     KeyCode::Enter => {
       app.search = None;
       if mode == SearchMode::Actors {
-        app.activate_actor(pool, router, contexts).await?;
+        app.activate_actor(engine).await?;
       } else if let Some(tool) = app.selected_tool().cloned() {
         app.form = Some(ToolForm::new(tool));
       }
@@ -364,13 +382,7 @@ async fn handle_search_key(
   Ok(())
 }
 
-async fn handle_form_key(
-  app: &mut DebugApp,
-  key: KeyEvent,
-  pool: &PgPool,
-  router: &ToolRouter,
-  contexts: &ActorContextBuilder,
-) -> Result<bool> {
+async fn handle_form_key(app: &mut DebugApp, key: KeyEvent, engine: &Engine) -> Result<bool> {
   match key.code {
     KeyCode::Esc => {
       app.form = None;
@@ -390,8 +402,9 @@ async fn handle_form_key(
         }
       };
       app.call_sequence += 1;
-      let result = router
-        .invoke(&ToolInvocation {
+      let result = engine
+        .agency()
+        .invoke_tool(InvokeTool {
           actor: app.actor,
           call: ToolCall {
             id: format!("tui-{}-{}", std::process::id(), app.call_sequence),
@@ -399,7 +412,7 @@ async fn handle_form_key(
             input,
           },
         })
-        .await;
+        .await?;
       if result.success {
         app.status = format!(
           "✓ {} committed as event #{}",
@@ -407,12 +420,12 @@ async fn handle_form_key(
           result
             .event
             .as_ref()
-            .map(|event| event.id.to_string())
+            .map(|event| event.event_id.to_string())
             .unwrap_or_default()
         );
         app.form = None;
         app.detail_view = DetailView::Events;
-        app.refresh(pool, contexts).await?;
+        app.refresh(engine).await?;
       } else {
         app.form.as_mut().unwrap().error = result.error;
       }
@@ -441,14 +454,14 @@ struct FormField {
 }
 
 struct ToolForm {
-  tool: ToolDefinition,
+  tool: ToolView,
   fields: Vec<FormField>,
   selected: usize,
   error: Option<String>,
 }
 
 impl ToolForm {
-  fn new(tool: ToolDefinition) -> Self {
+  fn new(tool: ToolView) -> Self {
     let required: Vec<&str> = tool
       .input_schema
       .get("required")
@@ -562,7 +575,7 @@ impl ToolForm {
     field.value = field.choices[next].clone();
   }
   fn load_example(&mut self) {
-    if let Some(example) = tool_example(self.tool.name) {
+    if let Some(example) = tool_example(&self.tool.name) {
       for field in &mut self.fields {
         if let Some(value) = example.get(&field.name) {
           field.value = display_default(value)
@@ -767,12 +780,12 @@ fn draw_tools(frame: &mut Frame<'_>, area: Rect, app: &DebugApp) {
       let tool = &app.tools[*index];
       ListItem::new(vec![
         Line::styled(
-          tool.name,
+          tool.name.as_str(),
           Style::default()
             .fg(Color::LightYellow)
             .add_modifier(Modifier::BOLD),
         ),
-        Line::styled(tool.description, Style::default().fg(Color::Gray)),
+        Line::styled(tool.description.as_str(), Style::default().fg(Color::Gray)),
       ])
     })
     .collect();
@@ -800,7 +813,7 @@ fn draw_details(frame: &mut Frame<'_>, area: Rect, app: &DebugApp) {
     .scroll((app.detail_scroll, 0));
   frame.render_widget(paragraph, area);
 }
-fn format_events(events: &[EngineEvent]) -> String {
+fn format_events(events: &[ActorEventView]) -> String {
   if events.is_empty() {
     return "No events yet.\n\nSuccessful tool calls appear here as durable consequences."
       .to_string();
@@ -812,7 +825,7 @@ fn format_events(events: &[EngineEvent]) -> String {
     .map(|event| {
       format!(
         "● #{}  {}\n{}",
-        event.id,
+        event.event_id,
         event.event_type,
         serde_json::to_string_pretty(&event.payload).unwrap_or_default()
       )
@@ -839,7 +852,7 @@ fn draw_form(frame: &mut Frame<'_>, area: Rect, form: &ToolForm) {
     ])
     .split(inner);
   frame.render_widget(
-    Paragraph::new(form.tool.description).style(Style::default().fg(Color::Gray)),
+    Paragraph::new(form.tool.description.as_str()).style(Style::default().fg(Color::Gray)),
     rows[0],
   );
   let items: Vec<ListItem> = form

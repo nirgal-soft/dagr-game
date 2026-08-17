@@ -8,8 +8,8 @@ use crossterm::{
   terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use dagr_lib::{
-  agency::{ActorDirectoryEntry, ActorScope, AgentRunner, load_actor_directory},
-  llm::claude::{ClaudeProvider, DEFAULT_CLAUDE_MODEL},
+  Engine,
+  agency::{ActorFilter, ActorRunRequest, ActorScope, ActorSummary},
 };
 use ratatui::{
   Frame, Terminal,
@@ -20,7 +20,6 @@ use ratatui::{
   widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 use serde_json::json;
-use sqlx::PgPool;
 
 struct PlaygroundGuard;
 impl Drop for PlaygroundGuard {
@@ -49,7 +48,7 @@ struct ChatMessage {
 }
 
 struct Playground {
-  actors: Vec<ActorDirectoryEntry>,
+  actors: Vec<ActorSummary>,
   actor_cursor: usize,
   actor_filter: String,
   actor: ActorScope,
@@ -66,14 +65,14 @@ struct Playground {
 }
 
 impl Playground {
-  async fn load(pool: &PgPool) -> Result<Self> {
-    let actors = load_actor_directory(pool).await?;
+  async fn load(engine: &Engine) -> Result<Self> {
+    let actors = engine.agency().actors(ActorFilter::default()).await?;
     let actor = actors
       .first()
       .map(|entry| entry.actor)
       .unwrap_or(ActorScope::Gm);
     let model =
-      std::env::var("DAGR_LLM_MODEL").unwrap_or_else(|_| DEFAULT_CLAUDE_MODEL.to_string());
+      std::env::var("DAGR_LLM_MODEL").unwrap_or_else(|_| crate::gateway::DEFAULT_MODEL.to_string());
     let configured = std::env::var("ANTHROPIC_API_KEY").is_ok_and(|key| !key.trim().is_empty());
     Ok(Self{
       actors,actor_cursor:0,actor_filter:String::new(),actor,focus:Focus::Actors,
@@ -147,13 +146,13 @@ impl Playground {
   }
 }
 
-pub async fn run(pool: Arc<PgPool>) -> Result<()> {
+pub async fn run(engine: Arc<Engine>) -> Result<()> {
   terminal::enable_raw_mode()?;
   execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)?;
   let _guard = PlaygroundGuard;
   let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
   terminal.clear()?;
-  let mut app = Playground::load(pool.as_ref()).await?;
+  let mut app = Playground::load(&engine).await?;
 
   loop {
     terminal.draw(|frame| draw(frame, &app))?;
@@ -232,7 +231,7 @@ pub async fn run(pool: Arc<PgPool>) -> Result<()> {
           app.input.pop();
         }
         KeyCode::Enter if !app.input.trim().is_empty() => {
-          send(&mut terminal, &mut app, pool.clone()).await
+          send(&mut terminal, &mut app, &engine).await
         }
         KeyCode::Char(character) => app.input.push(character),
         _ => {}
@@ -245,7 +244,7 @@ pub async fn run(pool: Arc<PgPool>) -> Result<()> {
 async fn send(
   terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
   app: &mut Playground,
-  pool: Arc<PgPool>,
+  engine: &Engine,
 ) {
   let message = std::mem::take(&mut app.input);
   app.messages.push(ChatMessage {
@@ -255,15 +254,17 @@ async fn send(
   let history = app.history();
   app.status = format!("{} is thinking…", app.model);
   let _ = terminal.draw(|frame| draw(frame, app));
-  let result = async {
-    let provider = ClaudeProvider::from_env()?;
-    let mut runner = AgentRunner::new(provider, pool, 6)?;
-    runner.run_with_stimulus(app.actor,json!({
-      "kind":"gameplay_scene_turn","message":message,"conversation":history,
-      "instruction":"Create the smallest fun playable unit: one immediate situation, one meaningful pressure, and a clear invitation for the player to act. Respond naturally, keep the scene moving, and use scoped tools whenever canonical state changes. Do not overbuild the campaign."
-    })).await
-  }
-  .await;
+  let result = engine
+    .agency()
+    .run_actor(ActorRunRequest {
+      actor: app.actor,
+      stimulus: json!({
+        "kind":"gameplay_scene_turn","message":message,"conversation":history,
+        "instruction":"Create the smallest fun playable unit: one immediate situation, one meaningful pressure, and a clear invitation for the player to act. Respond naturally, keep the scene moving, and use scoped tools whenever canonical state changes. Do not overbuild the campaign."
+      }),
+      max_tool_calls: 6,
+    })
+    .await;
   match result {
     Ok(report) => {
       let had_visible_text = !report.visible_text.is_empty();
@@ -273,7 +274,7 @@ async fn send(
           content: text,
         });
       }
-      for tool in &report.tool_results {
+      for tool in &report.tool_outcomes {
         let (role, content) = if tool.success {
           (
             MessageRole::Tool,
@@ -291,7 +292,7 @@ async fn send(
                   .map(|event| {
                     format!(
                       "\n\nTechnical detail — event #{}\n{}",
-                      event.id,
+                      event.event_id,
                       serde_json::to_string_pretty(&event.payload).unwrap_or_default()
                     )
                   })
@@ -313,7 +314,7 @@ async fn send(
         };
         app.messages.push(ChatMessage { role, content });
       }
-      if !had_visible_text && report.tool_results.is_empty() {
+      if !had_visible_text && report.tool_outcomes.is_empty() {
         app.messages.push(ChatMessage {
           role: MessageRole::Model,
           content: "I have nothing further to add for that prompt.".to_string(),
@@ -552,25 +553,20 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 #[cfg(test)]
 mod tests {
   use super::*;
-  #[test]
-  fn playground_default_is_haiku() {
-    assert!(DEFAULT_CLAUDE_MODEL.contains("haiku"));
-  }
+  use dagr_lib::{agency::FactionId, characters::CharacterId};
 
   #[test]
   fn every_actor_scope_has_small_scene_starters() {
     assert_eq!(scene_starters(ActorScope::Gm).len(), 3);
     assert!(
-      scene_starters(ActorScope::Npc(dagr_lib::ids::CharacterId::new(1).unwrap()))
+      scene_starters(ActorScope::Npc(CharacterId::new(1).unwrap()))
         .iter()
         .all(|starter| starter.len() < 220)
     );
     assert!(
-      scene_starters(ActorScope::Faction(
-        dagr_lib::ids::FactionId::new(1).unwrap()
-      ))
-      .iter()
-      .all(|starter| starter.len() < 220)
+      scene_starters(ActorScope::Faction(FactionId::new(1).unwrap()))
+        .iter()
+        .all(|starter| starter.len() < 220)
     );
   }
 }

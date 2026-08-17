@@ -1,7 +1,7 @@
-use super::{Feature, Fixture, Ground, LocationConfig, PoiKind, PointOfInterest, Pos};
+use super::{Feature, Fixture, Ground, LocationConfig, PointOfInterest, Pos};
 use crate::renderer::{RenderConfig, Tile};
 use crate::visiblity::{Visibility, VisibilityMap};
-use dagr_lib::components::world::location::LocationType;
+use dagr_lib::world::{LocationId, LocationKind};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
@@ -40,7 +40,7 @@ impl Area {
     }
   }
 
-  pub fn for_location_type(location_type: LocationType, width: i32, height: i32) -> Self {
+  pub fn for_location_type(location_type: LocationKind, width: i32, height: i32) -> Self {
     let config = LocationConfig::for_type(location_type);
     let mut area = Self::new(width, height, config.ground);
     if config.has_fov {
@@ -50,11 +50,11 @@ impl Area {
   }
 
   pub fn dungeon(width: i32, height: i32) -> Self {
-    Self::for_location_type(LocationType::Dungeon, width, height)
+    Self::for_location_type(LocationKind::Dungeon, width, height)
   }
 
   pub fn wilderness(width: i32, height: i32) -> Self {
-    Self::for_location_type(LocationType::Wilderness, width, height)
+    Self::for_location_type(LocationKind::Wilderness, width, height)
   }
 
   //---accessors and mutators---
@@ -77,7 +77,8 @@ impl Area {
     self.features.remove(&(x, y));
   }
   pub fn find_feature(&self, feature: Feature) -> Option<Pos> {
-    self.features
+    self
+      .features
       .iter()
       .find_map(|(pos, candidate)| (*candidate == feature).then_some(*pos))
   }
@@ -120,7 +121,7 @@ impl Area {
   pub fn add_poi(&mut self, poi: PointOfInterest) {
     let pos = poi.pos;
     let feature = poi.kind.feature();
-    if poi.kind.enterable_location_type() == Some(LocationType::Dungeon) {
+    if poi.kind.enterable_location_kind() == Some(LocationKind::Dungeon) {
       self.stairs_down = Some(pos);
     }
     self.set_feature(pos.0, pos.1, feature);
@@ -153,11 +154,11 @@ impl Area {
     }
     labels
   }
-  pub fn find_poi_by_entity(&self, entity: hecs::Entity) -> Option<Pos> {
+  pub fn find_poi_by_location(&self, location: LocationId) -> Option<Pos> {
     self
       .pois
       .values()
-      .find(|poi| poi.entity == Some(entity))
+      .find(|poi| poi.location == Some(location))
       .map(|poi| poi.pos)
   }
 
@@ -248,7 +249,10 @@ impl Area {
 
   //---rendering---
   pub fn get_tile(&self, x: i32, y: i32) -> Tile {
-    self.fixtures_at(x, y).last().map(|fixture| fixture.kind.tile())
+    self
+      .fixtures_at(x, y)
+      .last()
+      .map(|fixture| fixture.kind.tile())
       .or_else(|| self.features.get(&(x, y)).map(|feature| feature.tile))
       .unwrap_or(self.ground.tile)
   }
@@ -339,6 +343,7 @@ impl Area {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::areas::PoiKind;
 
   #[test]
   fn ground_is_walkable_and_transparent() {

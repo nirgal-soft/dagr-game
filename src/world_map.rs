@@ -1,29 +1,32 @@
 use std::collections::HashMap;
-use hecs::Entity;
+
+use dagr_lib::world::HexView;
 
 #[derive(Clone, Debug)]
-pub struct WorldMap{
-  grid: HashMap<(i32, i32), Entity>,
+pub struct WorldMap {
+  grid: HashMap<(i32, i32), HexView>,
 }
 
-impl WorldMap{
-  pub fn new() -> Self{
-    Self{grid: HashMap::new()}
+impl WorldMap {
+  pub fn new() -> Self {
+    Self {
+      grid: HashMap::new(),
+    }
   }
 
-  pub fn insert(&mut self, pos: (i32, i32), entity: Entity){
-    self.grid.insert(pos, entity);
+  pub fn insert(&mut self, hex: HexView) {
+    self.grid.insert((hex.coordinate.x, hex.coordinate.y), hex);
   }
 
-  pub fn get(&self, pos:(i32, i32)) -> Option<Entity>{
-    self.grid.get(&pos).copied()
+  pub fn get(&self, pos: (i32, i32)) -> Option<&HexView> {
+    self.grid.get(&pos)
   }
 
-  pub fn clear(&mut self){
+  pub fn clear(&mut self) {
     self.grid.clear();
   }
 
-  pub fn count(&self) -> usize{
+  pub fn count(&self) -> usize {
     self.grid.len()
   }
 }

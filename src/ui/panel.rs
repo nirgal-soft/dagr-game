@@ -3,13 +3,7 @@ use anyhow::Result;
 use crossterm::{
   cursor, 
   queue, 
-  style::{
-    Attribute,
-    Color,
-    SetAttribute,
-    SetForegroundColor,
-    SetBackgroundColor,
-  },
+  style::{Attribute, SetAttribute},
 };
 use super::{draw_box, border_style::BorderStyle};
 

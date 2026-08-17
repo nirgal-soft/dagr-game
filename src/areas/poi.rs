@@ -1,9 +1,8 @@
 use super::{Feature, Pos};
 use dagr_lib::{
-  components::world::location::LocationType,
-  kits::hexkit::poi::PointOfInterest as HexPointOfInterest,
+  content::ContentKey,
+  world::{LocationId, LocationKind},
 };
-use hecs::Entity;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PoiKind {
@@ -18,16 +17,17 @@ pub enum PoiKind {
 }
 
 impl PoiKind {
-  pub fn from_hex_poi(poi: &HexPointOfInterest) -> Self {
-    match poi {
-      HexPointOfInterest::Ruins => Self::Ruins,
-      HexPointOfInterest::Caves => Self::Cave,
-      HexPointOfInterest::Tomb => Self::Tomb,
-      HexPointOfInterest::Lair => Self::Lair,
-      HexPointOfInterest::NatResource(_) => Self::NaturalResource,
-      HexPointOfInterest::Settlement => Self::Settlement,
-      HexPointOfInterest::Mine => Self::Mine,
-      HexPointOfInterest::Dungeon => Self::Dungeon,
+  pub fn from_content_key(key: &ContentKey) -> Self {
+    match key.as_str().rsplit(':').next() {
+      Some("ruins") => Self::Ruins,
+      Some("caves") => Self::Cave,
+      Some("tomb") => Self::Tomb,
+      Some("lair") => Self::Lair,
+      Some("natural_resource") => Self::NaturalResource,
+      Some("settlement") => Self::Settlement,
+      Some("mine") => Self::Mine,
+      Some("dungeon") => Self::Dungeon,
+      _ => Self::Ruins,
     }
   }
 
@@ -57,8 +57,8 @@ impl PoiKind {
     }
   }
 
-  pub fn enterable_location_type(self) -> Option<LocationType> {
-    matches!(self, Self::Dungeon).then_some(LocationType::Dungeon)
+  pub fn enterable_location_kind(self) -> Option<LocationKind> {
+    matches!(self, Self::Dungeon).then_some(LocationKind::Dungeon)
   }
 }
 
@@ -66,7 +66,7 @@ impl PoiKind {
 pub struct PointOfInterest {
   pub pos: Pos,
   pub kind: PoiKind,
-  pub entity: Option<Entity>,
+  pub location: Option<LocationId>,
   pub seed: u64,
   pub label: String,
   pub discovered: bool,
@@ -77,15 +77,15 @@ impl PointOfInterest {
     Self {
       pos,
       kind,
-      entity: None,
+      location: None,
       seed,
       label: kind.label().to_string(),
       discovered: false,
     }
   }
 
-  pub fn with_entity(mut self, entity: Entity) -> Self {
-    self.entity = Some(entity);
+  pub fn with_location(mut self, location: LocationId) -> Self {
+    self.location = Some(location);
     self
   }
 
@@ -95,7 +95,7 @@ impl PointOfInterest {
   }
 
   pub fn is_created(&self) -> bool {
-    self.entity.is_some()
+    self.location.is_some()
   }
 }
 
@@ -105,13 +105,22 @@ mod tests {
 
   #[test]
   fn only_supported_dungeon_pois_are_enterable() {
-    assert_eq!(PoiKind::Dungeon.enterable_location_type(), Some(LocationType::Dungeon));
-    assert_eq!(PoiKind::Ruins.enterable_location_type(), None);
+    assert_eq!(
+      PoiKind::Dungeon.enterable_location_kind(),
+      Some(LocationKind::Dungeon)
+    );
+    assert_eq!(PoiKind::Ruins.enterable_location_kind(), None);
   }
 
   #[test]
-  fn hex_pois_map_to_local_kinds() {
-    assert_eq!(PoiKind::from_hex_poi(&HexPointOfInterest::Ruins), PoiKind::Ruins);
-    assert_eq!(PoiKind::from_hex_poi(&HexPointOfInterest::Dungeon), PoiKind::Dungeon);
+  fn content_keys_map_to_local_kinds() {
+    assert_eq!(
+      PoiKind::from_content_key(&ContentKey::new("core:ruins").unwrap()),
+      PoiKind::Ruins
+    );
+    assert_eq!(
+      PoiKind::from_content_key(&ContentKey::new("core:dungeon").unwrap()),
+      PoiKind::Dungeon
+    );
   }
 }

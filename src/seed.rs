@@ -1,4 +1,4 @@
-use dagr_lib::components::world::location::LocationType;
+use dagr_lib::world::LocationKind;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -18,13 +18,27 @@ pub struct LocationDiscriminator {
 }
 
 impl LocationDiscriminator {
-  pub fn new(location_type: LocationType, x: i32, y: i32) -> Self {
+  pub fn new(location_kind: LocationKind, x: i32, y: i32) -> Self {
     Self {
-      location_type: location_type as u8,
+      location_type: location_discriminator(location_kind),
       x,
       y,
       index: 0,
     }
+  }
+}
+
+fn location_discriminator(kind: LocationKind) -> u8 {
+  match kind {
+    LocationKind::Hex => 0,
+    LocationKind::Dungeon => 1,
+    LocationKind::DungeonRoom => 2,
+    LocationKind::Town => 3,
+    LocationKind::Building => 4,
+    LocationKind::Interior => 5,
+    LocationKind::Wilderness => 6,
+    LocationKind::Cave => 7,
+    LocationKind::Lair => 8,
   }
 }
 
@@ -45,7 +59,7 @@ mod tests {
 
   #[test]
   fn derived_seeds_are_repeatable_and_distinct() {
-    let location = LocationDiscriminator::new(LocationType::Dungeon, 4, -2);
+    let location = LocationDiscriminator::new(LocationKind::Dungeon, 4, -2);
     assert_eq!(derive_seed(42, &location), derive_seed(42, &location));
     assert_ne!(
       derive_seed(42, &location),

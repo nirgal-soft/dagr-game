@@ -7,7 +7,9 @@ mod poi;
 
 pub use area::Area;
 pub use feature::Feature;
-pub use fixture::{Fixture, FixtureKind};
+pub use fixture::Fixture;
+#[cfg(test)]
+pub use fixture::FixtureKind;
 pub use ground::Ground;
 pub use location_config::LocationConfig;
 pub use poi::{PoiKind, PointOfInterest};
