@@ -30,7 +30,6 @@ mod menu;
 mod scene_playground;
 mod navigation;
 mod pathfinding;
-mod region_gen;
 mod renderer;
 mod seed;
 mod ui;
@@ -113,8 +112,6 @@ async fn run_game(
     registry
   );
 
-  // let mut rg = region_gen::RegionGenerator::new(entity_manager.clone());
-  // rg.generate().await?;
   let _hexes = ems::load::load(&pool, entity_manager.world.clone()).await?;
 
   let mut stdout = io::stdout();
