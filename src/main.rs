@@ -35,7 +35,6 @@ mod navigation;
 mod pathfinding;
 mod renderer;
 mod scene_playground;
-mod seed;
 mod startup;
 mod ui;
 mod views;

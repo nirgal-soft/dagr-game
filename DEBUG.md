@@ -45,7 +45,8 @@ enemy popup so exploration starts immediately.
 ## Engine Workbench
 
 Run `cargo run`, choose **Debug engine tools**, and DAGR opens a full-screen
-terminal workbench over the same `ToolRouter` used by model providers.
+terminal workbench over the same Agency tool catalog and invocation seam used
+by model providers.
 
 ## Navigation
 
@@ -80,7 +81,7 @@ pasted effects do not disappear into a one-line prompt.
 
 Successful calls refresh canonical context and appear immediately in the event
 timeline. Failures remain in the form beside the original input for correction.
-The workbench never bypasses engine validation or writes directly to PostgreSQL.
+The workbench never bypasses Engine validation or writes directly to SQLite.
 
 ## Scene Playground
 
