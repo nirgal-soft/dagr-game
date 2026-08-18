@@ -56,6 +56,7 @@ by model providers.
 - `/`: live filter and autocomplete the focused actor/tool list
 - `e`: toggle canonical context and the event timeline
 - `L`: open the AI-powered Scene Playground; `Esc` returns to the workbench
+- `T`: open the public-Engine Tag Playtest; `q` returns to the workbench
 - `PageUp` / `PageDown`: scroll details
 - `r`: refresh canonical state
 - `d`: create a ready-to-use demo NPC/Faction/Front scenario
@@ -82,6 +83,60 @@ pasted effects do not disappear into a one-line prompt.
 Successful calls refresh canonical context and appear immediately in the event
 timeline. Failures remain in the form beside the original input for correction.
 The workbench never bypasses Engine validation or writes directly to SQLite.
+
+## Tag Playtest
+
+Press `T` from the workbench. The surface lists the current authored category
+catalogue and definitions, durable NPC carriers, frozen Tag Applications,
+Danger-compatible Candidate Hooks, existing Front/Danger targets, and accepted
+contribution provenance. It reads and mutates state only through public
+`Engine` owner APIs.
+
+- `Tab`: cycle Categories, Carriers, Candidate Hooks, and existing Dangers
+- `↑` / `↓` or `j` / `k`: select within the focused pane
+- `d`: draw the selected NPC category and apply its Tag Set to the selected NPC
+- `a`: explicitly accept the selected Candidate Hook into the selected Danger
+- `i`: reinstall the authored pack from `DAGR_CORE_CONTENT_PATH`, then refresh
+- `r`: reopen the screen state from current Engine reads
+- `q` / `Esc`: return to the Engine Workbench
+
+To exercise content replacement, draw once, edit the pack at
+`DAGR_CORE_CONTENT_PATH` without changing retained content keys, bump its
+version, and press `i`. The Applications pane keeps the old frozen member names,
+concepts, seed, and pack version; another draw uses the current definitions.
+Quit and reopen the client to verify the same Applications and contribution
+provenance are reconstructed.
+
+### Focused playtest findings
+
+The isolated seed-0 terminal playtest on 2026-08-18 drew **Impossible Witness**
+for **Amleth the Cautious**, produced three Danger-compatible hooks, accepted its
+`pressure` prompt into **The Brass Compact**, reinstalled authored content, and
+showed the same Application and contribution after a full client restart. The
+automated UI smoke additionally replaced `core@0.1.0-dev` with
+`core@0.2.0-playtest`; the old Application stayed frozen while the next draw
+used current definitions.
+
+- **Domain:** Tag Set, Application, Candidate Hook, and contribution remained
+  distinguishable once shown together. `Carrier` is precise engine language but
+  needs player-facing wording before this leaves debug tooling.
+- **API:** existing-artifact acceptance was the missing workflow seam.
+  `Campaign::accept_tag_hook(AcceptTagHook)` now owns validation, atomic
+  persistence, idempotency, and provenance. A stable public Candidate Hook
+  fingerprint would avoid clients deriving idempotency keys from serialized
+  hook keys.
+- **Content:** the selected NPC definition produced concrete, usable pressure,
+  leverage, and entanglement prompts. Several hooks from one definition are
+  semantically close; broader authored contrast should be tested before
+  automatic orchestration ranks them.
+- **Provenance:** Application ID, Tag Set ID, selection seed, pack/version,
+  member text, role, prompt, and target remain understandable after reopen and
+  replacement.
+- **UX:** the 120×40 three-column view is dense, long concepts wrap heavily,
+  and location categories remain visible while this first carrier picker lists
+  NPCs only. Before Living Campaign work, add applicability-aware carrier
+  filtering, location carriers, and independent pane scrolling rather than
+  hiding these constraints behind automatic selection.
 
 ## Scene Playground
 

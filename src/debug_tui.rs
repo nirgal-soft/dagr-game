@@ -237,6 +237,7 @@ async fn actor_context(engine: &Engine, actor: ActorScope) -> Result<Value> {
 pub enum DebugDestination {
   MainMenu,
   ScenePlayground,
+  TagPlaytest,
 }
 
 pub async fn run(engine: Arc<Engine>) -> Result<DebugDestination> {
@@ -278,6 +279,9 @@ pub async fn run(engine: Arc<Engine>) -> Result<DebugDestination> {
       KeyCode::Char('q') | KeyCode::Esc => return Ok(DebugDestination::MainMenu),
       KeyCode::Char('l') | KeyCode::Char('L') => {
         return Ok(DebugDestination::ScenePlayground);
+      }
+      KeyCode::Char('t') | KeyCode::Char('T') => {
+        return Ok(DebugDestination::TagPlaytest);
       }
       KeyCode::Char('?') => app.help = true,
       KeyCode::Char('/') => {
@@ -692,7 +696,7 @@ fn draw(frame: &mut Frame<'_>, app: &DebugApp) {
     ),
     Span::raw("   deterministic state • creative authority   "),
     Span::styled(
-      "[ L  SCENE PLAYGROUND ]",
+      "[ L  SCENE PLAYGROUND ]  [ T  TAG PLAYTEST ]",
       Style::default()
         .fg(Color::LightMagenta)
         .add_modifier(Modifier::BOLD),

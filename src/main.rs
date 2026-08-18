@@ -35,6 +35,7 @@ mod navigation;
 mod pathfinding;
 mod renderer;
 mod scene_playground;
+mod tag_playtest;
 mod startup;
 mod ui;
 mod views;
@@ -101,6 +102,9 @@ async fn run_debug_tools(engine: Arc<Engine>, agent_runtime: Arc<AgentRuntime>) 
       debug_tui::DebugDestination::MainMenu => return Ok(()),
       debug_tui::DebugDestination::ScenePlayground => {
         scene_playground::run(engine.clone(), agent_runtime.clone()).await?
+      }
+      debug_tui::DebugDestination::TagPlaytest => {
+        tag_playtest::run(engine.clone(), startup::core_content_path()).await?
       }
     }
   }

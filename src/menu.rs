@@ -1,5 +1,5 @@
 mod main_menu;
-mod terminal;
+pub(crate) mod terminal;
 mod world_picker;
 
 pub use main_menu::{MainMenuChoice, show_main_menu};
