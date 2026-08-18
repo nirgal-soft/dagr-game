@@ -18,6 +18,7 @@ pub struct OpenedWorld {
   pub engine: Arc<Engine>,
   pub active_player: CharacterId,
   pub display_name: String,
+  pub model_runtimes: gateway::ModelRuntimes,
 }
 
 pub async fn select() -> Result<Option<OpenedWorld>> {
@@ -33,20 +34,22 @@ pub async fn select() -> Result<Option<OpenedWorld>> {
   match selection {
     menu::WorldSelection::Existing(world_id) => {
       let display_name = catalog.world(&world_id)?.display_name.clone();
-      let (engine, active_player) = open_world(&store, &catalog, &world_id).await?;
+      let (engine, active_player, model_runtimes) = open_world(&store, &catalog, &world_id).await?;
       Ok(Some(OpenedWorld {
         engine,
         active_player,
         display_name,
+        model_runtimes,
       }))
     }
     menu::WorldSelection::Create { display_name, seed } => {
-      let (engine, active_player) =
+      let (engine, active_player, model_runtimes) =
         create_world(&store, &mut catalog, display_name.clone(), seed).await?;
       Ok(Some(OpenedWorld {
         engine,
         active_player,
         display_name,
+        model_runtimes,
       }))
     }
     menu::WorldSelection::Quit => Ok(None),
@@ -57,14 +60,14 @@ async fn open_world(
   store: &CatalogStore,
   catalog: &Catalog,
   world_id: &str,
-) -> Result<(Arc<Engine>, CharacterId)> {
+) -> Result<(Arc<Engine>, CharacterId, gateway::ModelRuntimes)> {
   let record = catalog.world(world_id)?;
   let binding = catalog
     .local_player
     .world_bindings
     .get(world_id)
     .with_context(|| format!("managed world '{world_id}' has no player binding"))?;
-  let engine = open_engine(EngineConfig {
+  let (engine, model_runtimes) = open_engine(EngineConfig {
     world_path: store.world_path(record),
     core_content_path: core_content_path(),
     new_world: None,
@@ -76,12 +79,10 @@ async fn open_world(
       .character(*character_id)
       .await
       .with_context(|| {
-        format!(
-          "managed world '{world_id}' roster references missing Character {character_id}"
-        )
+        format!("managed world '{world_id}' roster references missing Character {character_id}")
       })?;
   }
-  Ok((Arc::new(engine), binding.active_character))
+  Ok((Arc::new(engine), binding.active_character, model_runtimes))
 }
 
 async fn create_world(
@@ -89,20 +90,19 @@ async fn create_world(
   catalog: &mut Catalog,
   display_name: String,
   seed: u64,
-) -> Result<(Arc<Engine>, CharacterId)> {
+) -> Result<(Arc<Engine>, CharacterId, gateway::ModelRuntimes)> {
   let world_id = store.begin_world(catalog, display_name)?;
   let record = catalog
     .worlds
     .get(&world_id)
     .context("new managed world has no catalog record")?;
-  let engine = Arc::new(
-    open_engine(EngineConfig {
-      world_path: store.world_path(record),
-      core_content_path: core_content_path(),
-      new_world: Some(NewWorld { seed }),
-    })
-    .await?,
-  );
+  let (engine, model_runtimes) = open_engine(EngineConfig {
+    world_path: store.world_path(record),
+    core_content_path: core_content_path(),
+    new_world: Some(NewWorld { seed }),
+  })
+  .await?;
+  let engine = Arc::new(engine);
   let origin = engine
     .world()
     .generate_hex(GenerateHex::generated(0, 0, None))
@@ -124,7 +124,7 @@ async fn create_world(
     .character
     .id;
   store.finish_world(catalog, &world_id, player)?;
-  Ok((engine, player))
+  Ok((engine, player, model_runtimes))
 }
 
 pub(crate) fn core_content_path() -> PathBuf {
@@ -133,9 +133,8 @@ pub(crate) fn core_content_path() -> PathBuf {
     .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dagr/content/core"))
 }
 
-async fn open_engine(config: EngineConfig) -> Result<Engine> {
-  match gateway::HostedGateway::from_env()? {
-    Some(provider) => Ok(Engine::open_with_model_provider(config, Arc::new(provider)).await?),
-    None => Ok(Engine::open(config).await?),
-  }
+async fn open_engine(config: EngineConfig) -> Result<(Engine, gateway::ModelRuntimes)> {
+  let runtimes = gateway::ModelRuntimes::from_env()?;
+  let engine = Engine::open_with_agent_runtime(config, runtimes.agent.clone()).await?;
+  Ok((engine, runtimes))
 }

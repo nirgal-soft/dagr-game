@@ -1,124 +1,65 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
-use async_trait::async_trait;
-use dagr_lib::agency::{ModelDecision, ModelProvider, ModelRequest, ModelResponse, ToolCall};
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use dagr_lib::agency::{
+  AgentRuntime, ModelProvider, ModelRequest, ModelRuntimeConfig, ProviderTransportConfig,
+  StructuredOutputProvider, StructuredOutputRuntime,
+};
 
-pub const DEFAULT_MODEL: &str = "claude-haiku-4-5-20251001";
-const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
+mod anthropic;
+mod ollama;
 
-pub struct HostedGateway {
-  client: reqwest::Client,
-  api_key: String,
-  model: String,
-  endpoint: String,
+use anthropic::AnthropicProvider;
+use ollama::OllamaProvider;
+
+pub struct ModelRuntimes {
+  pub agent: Arc<AgentRuntime>,
+  pub structured: Arc<StructuredOutputRuntime>,
 }
 
-impl HostedGateway {
-  pub fn from_env() -> Result<Option<Self>> {
-    let Some(api_key) = std::env::var("ANTHROPIC_API_KEY")
-      .ok()
-      .filter(|key| !key.trim().is_empty())
-    else {
-      return Ok(None);
+impl ModelRuntimes {
+  pub fn from_env() -> Result<Self> {
+    Self::from_config(ModelRuntimeConfig::from_env()?)
+  }
+
+  fn from_config(config: ModelRuntimeConfig) -> Result<Self> {
+    let agent_provider: Arc<dyn ModelProvider> = match &config.agent.transport {
+      ProviderTransportConfig::Anthropic(transport) => {
+        Arc::new(AnthropicProvider::new(transport.clone()))
+      }
+      ProviderTransportConfig::Ollama(transport) => {
+        Arc::new(OllamaProvider::new(transport.clone()).context("invalid agent Ollama transport")?)
+      }
     };
-    Ok(Some(Self {
-      client: reqwest::Client::new(),
-      api_key,
-      model: std::env::var("DAGR_LLM_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string()),
-      endpoint: std::env::var("DAGR_LLM_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.to_string()),
-    }))
-  }
-
-  fn headers(&self) -> Result<HeaderMap> {
-    let mut headers = HeaderMap::new();
-    headers.insert("x-api-key", HeaderValue::from_str(&self.api_key)?);
-    headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    Ok(headers)
-  }
-}
-
-#[async_trait]
-impl ModelProvider for HostedGateway {
-  async fn decide(
-    &self,
-    request: &ModelRequest,
-  ) -> Result<ModelResponse, Box<dyn std::error::Error + Send + Sync>> {
-    let tools = request
-      .tools
-      .iter()
-      .map(|tool| {
-        json!({
-          "name": tool.name,
-          "description": tool.description,
-          "input_schema": tool.input_schema,
-        })
-      })
-      .collect::<Vec<_>>();
-    let body = json!({
-      "model": self.model,
-      "max_tokens": 1024,
-      "temperature": 0.4,
-      "system": system_prompt(),
-      "messages": [{
-        "role": "user",
-        "content": format!(
-          "ACTOR SCOPE:\n{}\n\nSTIMULUS:\n{}\n\nCANONICAL ACTOR CONTEXT:\n{}\n\nPRIOR TOOL OUTCOMES:\n{}\n\nREMAINING TOOL CALLS: {}",
-          serde_json::to_string(&request.actor)?,
-          serde_json::to_string_pretty(&request.stimulus)?,
-          serde_json::to_string_pretty(&request.actor_context)?,
-          serde_json::to_string_pretty(&request.prior_outcomes)?,
-          request.remaining_tool_calls,
-        )
-      }],
-      "tools": tools,
-      "tool_choice": {"type": "auto"},
-    });
-    let response = self
-      .client
-      .post(&self.endpoint)
-      .timeout(std::time::Duration::from_secs(60))
-      .headers(self.headers()?)
-      .json(&body)
-      .send()
-      .await
-      .context("hosted model request failed")?;
-    let status = response.status();
-    let body = response.text().await?;
-    if !status.is_success() {
-      return Err(
-        anyhow::anyhow!("hosted model request failed with status {status}: {body}").into(),
-      );
-    }
-    Ok(response_from_body(&body)?)
+    let structured_provider: Arc<dyn StructuredOutputProvider> = Arc::new(
+      OllamaProvider::new(config.structured.transport.clone())
+        .context("invalid structured-output Ollama transport")?,
+    );
+    Ok(Self {
+      agent: Arc::new(
+        AgentRuntime::new(config.agent, agent_provider)
+          .context("invalid agent runtime configuration")?,
+      ),
+      structured: Arc::new(
+        StructuredOutputRuntime::new(config.structured, structured_provider)
+          .context("invalid structured-output runtime configuration")?,
+      ),
+    })
   }
 }
 
-fn response_from_body(body: &str) -> Result<ModelResponse> {
-  let response: GatewayResponse =
-    serde_json::from_str(body).context("failed to parse hosted model response")?;
-  let mut calls = Vec::new();
-  let mut text = Vec::new();
-  for block in response.content {
-    match block {
-      GatewayContent::ToolUse { id, name, input } => calls.push(ToolCall { id, name, input }),
-      GatewayContent::Text { text: value } if !value.trim().is_empty() => text.push(value),
-      GatewayContent::Text { .. } => {}
-    }
-  }
-  Ok(ModelResponse {
-    decision: if calls.is_empty() {
-      ModelDecision::Stop
-    } else {
-      ModelDecision::CallTools(calls)
-    },
-    visible_text: (!text.is_empty()).then(|| text.join("\n\n")),
-  })
+pub(super) fn request_prompt(request: &ModelRequest) -> Result<String> {
+  Ok(format!(
+    "ACTOR SCOPE:\n{}\n\nSTIMULUS:\n{}\n\nCANONICAL ACTOR CONTEXT:\n{}\n\nPRIOR TOOL OUTCOMES:\n{}\n\nREMAINING TOOL CALLS: {}",
+    serde_json::to_string(&request.actor)?,
+    serde_json::to_string_pretty(&request.stimulus)?,
+    serde_json::to_string_pretty(&request.actor_context)?,
+    serde_json::to_string_pretty(&request.prior_outcomes)?,
+    request.remaining_tool_calls,
+  ))
 }
 
-fn system_prompt() -> &'static str {
+pub(super) fn system_prompt() -> &'static str {
   "You animate the scoped GM, NPC, or Faction actor in the DAGR engine. Stay \
    faithful to the supplied actor scope and canonical context. Canonical facts are \
    only those present in context or returned by tools. Choose tools to act; do not \
@@ -127,54 +68,44 @@ fn system_prompt() -> &'static str {
    Stop when no further tool use is warranted."
 }
 
-#[derive(Deserialize)]
-struct GatewayResponse {
-  content: Vec<GatewayContent>,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum GatewayContent {
-  ToolUse {
-    id: String,
-    name: String,
-    input: Value,
-  },
-  Text {
-    text: String,
-  },
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
+  use dagr_lib::agency::{AgentRole, ProviderKind};
 
   #[test]
-  fn maps_visible_text_and_native_tool_calls() {
-    let response = response_from_body(
-      r#"{
-        "content": [
-          {"type":"text", "text":"The tower trembles."},
-          {"type":"tool_use", "id":"call-1", "name":"front_advance", "input":{"danger_id":7}}
-        ]
-      }"#,
-    )
-    .unwrap();
-    assert_eq!(
-      response.visible_text.as_deref(),
-      Some("The tower trembles.")
-    );
-    let ModelDecision::CallTools(calls) = response.decision else {
-      panic!("expected tool calls")
-    };
-    assert_eq!(calls[0].name, "front_advance");
+  fn client_factory_constructs_default_local_runtimes_without_a_network_probe() {
+    let config = ModelRuntimeConfig::from_vars(Vec::new()).unwrap();
+    let runtimes = ModelRuntimes::from_config(config).unwrap();
+
+    let agent = runtimes.agent.diagnostics(&AgentRole::Gm);
+    assert_eq!(agent.provider, ProviderKind::Ollama);
+    assert_eq!(agent.model, "qwen3:4b");
+
+    let structured = runtimes.structured.diagnostics();
+    assert_eq!(structured.provider, ProviderKind::Ollama);
+    assert_eq!(structured.model, "qwen3:4b");
   }
 
   #[test]
-  fn text_only_response_stops() {
-    let response =
-      response_from_body(r#"{"content":[{"type":"text","text":"Nothing changes."}]}"#).unwrap();
-    assert_eq!(response.decision, ModelDecision::Stop);
-    assert_eq!(response.visible_text.as_deref(), Some("Nothing changes."));
+  fn client_factory_constructs_documented_anthropic_runtime() {
+    let config = ModelRuntimeConfig::from_vars([
+      ("DAGR_AGENT_PROVIDER".to_string(), "anthropic".to_string()),
+      ("ANTHROPIC_API_KEY".to_string(), "test-key".to_string()),
+      (
+        "DAGR_AGENT_PRIMARY_MODEL".to_string(),
+        "claude-haiku-4-5-20251001".to_string(),
+      ),
+      (
+        "DAGR_AGENT_ECONOMY_MODEL".to_string(),
+        "claude-haiku-4-5-20251001".to_string(),
+      ),
+    ])
+    .unwrap();
+    let runtimes = ModelRuntimes::from_config(config).unwrap();
+
+    let agent = runtimes.agent.diagnostics(&AgentRole::Gm);
+    assert_eq!(agent.provider, ProviderKind::Anthropic);
+    assert_eq!(agent.model, "claude-haiku-4-5-20251001");
   }
 }

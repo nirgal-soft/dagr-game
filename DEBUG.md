@@ -95,6 +95,10 @@ payloads. Press `V` when technical event detail is useful. Actor search, scene
 scrolling, retained short-term history, missing-key errors, and clean TTY
 transitions are handled in place.
 
-Set `ANTHROPIC_API_KEY` in `.env` to play. The default model is the inexpensive
-`claude-haiku-4-5-20251001`; override it with `DAGR_LLM_MODEL`. Story prose is
+The agent runtime defaults to local Ollama with `qwen3:4b` for both model tiers.
+Use the namespaced `DAGR_AGENT_*` policy in `.env` to select a remote Ollama URL,
+Anthropic, profile models, output caps, or exact semantic-role tier overrides.
+Anthropic additionally requires `ANTHROPIC_API_KEY`. The separate
+`DAGR_STRUCTURED_*` settings control schema-constrained generation. Construction
+validates configuration but does not probe either provider. Story prose is
 presentation only. Green `WORLD` cards represent validated canonical changes.

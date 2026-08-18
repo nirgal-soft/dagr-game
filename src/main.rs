@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use crossterm::{cursor, execute, terminal};
-use dagr_lib::Engine;
+use dagr_lib::{Engine, agency::AgentRuntime};
 use tracing::{error, info};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -73,7 +73,10 @@ async fn run() -> Result<()> {
     engine,
     active_player,
     display_name: world_name,
+    model_runtimes,
   } = world;
+  let agent_runtime = model_runtimes.agent;
+  let _structured_output = model_runtimes.structured;
 
   loop {
     match menu::show_main_menu(&world_name)? {
@@ -83,19 +86,22 @@ async fn run() -> Result<()> {
       menu::MainMenuChoice::CombatArena => {
         run_game(engine.clone(), active_player, wilderness_layout, true).await?
       }
-      menu::MainMenuChoice::DebugTools => run_debug_tools(engine.clone()).await?,
+      menu::MainMenuChoice::DebugTools => {
+        run_debug_tools(engine.clone(), agent_runtime.clone()).await?
+      }
       menu::MainMenuChoice::Quit => break,
     }
   }
   Ok(())
 }
 
-
-async fn run_debug_tools(engine: Arc<Engine>) -> Result<()> {
+async fn run_debug_tools(engine: Arc<Engine>, agent_runtime: Arc<AgentRuntime>) -> Result<()> {
   loop {
     match debug_tui::run(engine.clone()).await? {
       debug_tui::DebugDestination::MainMenu => return Ok(()),
-      debug_tui::DebugDestination::ScenePlayground => scene_playground::run(engine.clone()).await?,
+      debug_tui::DebugDestination::ScenePlayground => {
+        scene_playground::run(engine.clone(), agent_runtime.clone()).await?
+      }
     }
   }
 }

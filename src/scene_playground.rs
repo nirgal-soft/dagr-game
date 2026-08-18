@@ -9,7 +9,7 @@ use crossterm::{
 };
 use dagr_lib::{
   Engine,
-  agency::{ActorFilter, ActorRunRequest, ActorScope, ActorSummary},
+  agency::{ActorFilter, ActorRunRequest, ActorScope, ActorSummary, AgentRole, AgentRuntime},
 };
 use ratatui::{
   Frame, Terminal,
@@ -65,19 +65,22 @@ struct Playground {
 }
 
 impl Playground {
-  async fn load(engine: &Engine) -> Result<Self> {
+  async fn load(engine: &Engine, runtime: &AgentRuntime) -> Result<Self> {
     let actors = engine.agency().actors(ActorFilter::default()).await?;
     let actor = actors
       .first()
       .map(|entry| entry.actor)
       .unwrap_or(ActorScope::Gm);
-    let model =
-      std::env::var("DAGR_LLM_MODEL").unwrap_or_else(|_| crate::gateway::DEFAULT_MODEL.to_string());
-    let configured = std::env::var("ANTHROPIC_API_KEY").is_ok_and(|key| !key.trim().is_empty());
+    let gm = runtime.diagnostics(&AgentRole::Gm);
+    let faction = runtime.diagnostics(&AgentRole::Faction);
+    let model = format!(
+      "{:?} GM={:?}/{} Faction={:?}/{}",
+      gm.provider, gm.tier, gm.model, faction.tier, faction.model,
+    );
     Ok(Self{
       actors,actor_cursor:0,actor_filter:String::new(),actor,focus:Focus::Actors,
-      searching:false,input:String::new(),scroll:0,help:false,model:model.clone(),show_details:false,starter_index:0,
-      status:if configured{"Choose an actor, press F2 for a scene starter, then play.".to_string()}else{"Set ANTHROPIC_API_KEY in .env to play a scene.".to_string()},
+      searching:false,input:String::new(),scroll:0,help:false,model,show_details:false,starter_index:0,
+      status:"Choose an actor, press F2 for a scene starter, then play.".to_string(),
       messages:vec![ChatMessage{role:MessageRole::System,content:
         "Play one small moment. Choose who animates the scene, start with F2 or your own premise, and respond naturally for a few turns.".to_string()}],
     })
@@ -146,13 +149,13 @@ impl Playground {
   }
 }
 
-pub async fn run(engine: Arc<Engine>) -> Result<()> {
+pub async fn run(engine: Arc<Engine>, runtime: Arc<AgentRuntime>) -> Result<()> {
   terminal::enable_raw_mode()?;
   execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)?;
   let _guard = PlaygroundGuard;
   let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
   terminal.clear()?;
-  let mut app = Playground::load(&engine).await?;
+  let mut app = Playground::load(&engine, &runtime).await?;
 
   loop {
     terminal.draw(|frame| draw(frame, &app))?;
