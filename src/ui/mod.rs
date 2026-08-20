@@ -7,85 +7,94 @@ pub mod panel;
 pub mod popup;
 pub mod stat_bar;
 
-use std::io::{self, Write};
 use anyhow::Result;
-use crossterm::{
-  cursor, 
-  queue, 
-  style::{
-    Color, 
-    ResetColor,
-    SetForegroundColor,
-    SetBackgroundColor,
-  },
-};
 use border_style::BorderStyle;
+use crossterm::{
+    cursor, queue,
+    style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
+};
+use std::io::{self, Write};
 
 pub fn draw_box(
-  stdout: &mut io::Stdout,
-  x: u16,
-  y: u16,
-  w: u16,
-  h: u16,
-  style: BorderStyle,
-) -> Result<()>{
-  if w < 2 || h < 2{
-    return Ok(());
-  }
+    stdout: &mut io::Stdout,
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
+    style: BorderStyle,
+) -> Result<()> {
+    if w < 2 || h < 2 {
+        return Ok(());
+    }
 
-  //top
-  queue!(stdout, cursor::MoveTo(x, y))?;
-  write!(stdout, "{}", style.top_left)?;
-  write!(stdout, "{}", style.horizontal.to_string().repeat(w as usize - 2))?;
-  write!(stdout, "{}", style.top_right)?;
+    //top
+    queue!(stdout, cursor::MoveTo(x, y))?;
+    write!(stdout, "{}", style.top_left)?;
+    write!(
+        stdout,
+        "{}",
+        style.horizontal.to_string().repeat(w as usize - 2)
+    )?;
+    write!(stdout, "{}", style.top_right)?;
 
-  //sides
-  for row in 1..h - 1{
-    queue!(stdout, cursor::MoveTo(x, y + row))?;
-    write!(stdout, "{}", style.vertical)?;
-    queue!(stdout, cursor::MoveTo(x + w - 1, y + row))?;
-    write!(stdout, "{}", style.vertical)?;
-  }
+    //sides
+    for row in 1..h - 1 {
+        queue!(stdout, cursor::MoveTo(x, y + row))?;
+        write!(stdout, "{}", style.vertical)?;
+        queue!(stdout, cursor::MoveTo(x + w - 1, y + row))?;
+        write!(stdout, "{}", style.vertical)?;
+    }
 
-  //bottom
-  queue!(stdout, cursor::MoveTo(x, y + h - 1))?;
-  write!(stdout, "{}", style.bottom_left)?;
-  write!(stdout, "{}", style.horizontal.to_string().repeat(w as usize - 2))?;
-  write!(stdout, "{}", style.bottom_right)?;
+    //bottom
+    queue!(stdout, cursor::MoveTo(x, y + h - 1))?;
+    write!(stdout, "{}", style.bottom_left)?;
+    write!(
+        stdout,
+        "{}",
+        style.horizontal.to_string().repeat(w as usize - 2)
+    )?;
+    write!(stdout, "{}", style.bottom_right)?;
 
-  Ok(())
+    Ok(())
 }
 
-pub fn draw_text(stdout: &mut io::Stdout, x: u16, y: u16, text: &str, fg: Color, bg: Color) -> Result<()>{
-  queue!(
-    stdout,
-    cursor::MoveTo(x, y),
-    SetForegroundColor(fg),
-    SetBackgroundColor(bg),
-  )?;
+pub fn draw_text(
+    stdout: &mut io::Stdout,
+    x: u16,
+    y: u16,
+    text: &str,
+    fg: Color,
+    bg: Color,
+) -> Result<()> {
+    queue!(
+        stdout,
+        cursor::MoveTo(x, y),
+        SetForegroundColor(fg),
+        SetBackgroundColor(bg),
+    )?;
 
-  write!(stdout, "{}", text)?;
-  queue!(stdout, ResetColor)?;
+    write!(stdout, "{}", text)?;
+    queue!(stdout, ResetColor)?;
 
-  Ok(())
+    Ok(())
 }
 
 pub fn clear_region(
-  stdout: &mut io::Stdout,
-  x: u16,
-  y: u16,
-  w: u16,
-  h: u16,
-  bg: Color,
-) -> Result<()>{
-  let blank = " ".repeat(w as usize);
+    stdout: &mut io::Stdout,
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
+    bg: Color,
+) -> Result<()> {
+    let blank = " ".repeat(w as usize);
 
-  queue!(stdout, SetBackgroundColor(bg))?;
-  
-  for row in 0..h{
-    queue!(stdout, cursor::MoveTo(x, y + row))?;
-    write!(stdout, "{}", blank)?;
-  }
+    queue!(stdout, SetBackgroundColor(bg))?;
 
-  Ok(())
+    for row in 0..h {
+        queue!(stdout, cursor::MoveTo(x, y + row))?;
+        write!(stdout, "{}", blank)?;
+    }
+
+    Ok(())
 }

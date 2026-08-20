@@ -6,76 +6,75 @@ const MAX_LINES: usize = 12;
 
 #[derive(Default)]
 pub struct CombatLog {
-  lines: VecDeque<String>,
+    lines: VecDeque<String>,
 }
 
 impl CombatLog {
-  pub fn record_player_attack(&mut self, enemy: &str, strike: &StrikeOutcome) {
-    self.push(format_attack("You", &strike.attack));
-    if strike.defender_defeated {
-      self.push(format!("{enemy} is defeated."))
+    pub fn record_player_attack(&mut self, enemy: &str, strike: &StrikeOutcome) {
+        self.push(format_attack("You", &strike.attack));
+        if strike.defender_defeated {
+            self.push(format!("{enemy} is defeated."))
+        }
     }
-  }
 
-  pub fn record_enemy_attack(&mut self, enemy: &str, strike: &StrikeOutcome) {
-    self.push(format_attack(enemy, &strike.attack));
-    if strike.defender_defeated {
-      self.push("You are down. Press R to reset the arena.");
-    } else {
-      self.push(format!("Your HP: {}", strike.defender_hp));
+    pub fn record_enemy_attack(&mut self, enemy: &str, strike: &StrikeOutcome) {
+        self.push(format_attack(enemy, &strike.attack));
+        if strike.defender_defeated {
+            self.push("You are down. Press R to reset the arena.");
+        } else {
+            self.push(format!("Your HP: {}", strike.defender_hp));
+        }
     }
-  }
 
-  pub fn push(&mut self, line: impl Into<String>) {
-    self.lines.push_back(line.into());
-    while self.lines.len() > MAX_LINES {
-      self.lines.pop_front();
+    pub fn push(&mut self, line: impl Into<String>) {
+        self.lines.push_back(line.into());
+        while self.lines.len() > MAX_LINES {
+            self.lines.pop_front();
+        }
     }
-  }
 
-  pub fn recent(&self, count: usize) -> Vec<String> {
-    self
-      .lines
-      .iter()
-      .rev()
-      .take(count)
-      .cloned()
-      .collect::<Vec<_>>()
-      .into_iter()
-      .rev()
-      .collect()
-  }
+    pub fn recent(&self, count: usize) -> Vec<String> {
+        self.lines
+            .iter()
+            .rev()
+            .take(count)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
+    }
 
-  pub fn clear(&mut self) {
-    self.lines.clear()
-  }
+    pub fn clear(&mut self) {
+        self.lines.clear()
+    }
 }
 
 fn format_attack(actor: &str, result: &AttackResult) -> String {
-  if result.hit {
-    format!(
-      "{actor}: d20 {} -> HIT {} | AC {} < roll <= AV {}",
-      result.roll, result.damage, result.armor_class, result.attack_value,
-    )
-  } else {
-    format!(
-      "{actor}: d20 {} -> miss | needs AC {} < roll <= AV {}",
-      result.roll, result.armor_class, result.attack_value,
-    )
-  }
+    if result.hit {
+        format!(
+            "{actor}: d20 {} -> HIT {} | AC {} < roll <= AV {}",
+            result.roll, result.damage, result.armor_class, result.attack_value,
+        )
+    } else {
+        format!(
+            "{actor}: d20 {} -> miss | needs AC {} < roll <= AV {}",
+            result.roll, result.armor_class, result.attack_value,
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
-  use super::*;
+    use super::*;
 
-  #[test]
-  fn log_keeps_only_recent_lines() {
-    let mut log = CombatLog::default();
-    for index in 0..20 {
-      log.push(index.to_string())
+    #[test]
+    fn log_keeps_only_recent_lines() {
+        let mut log = CombatLog::default();
+        for index in 0..20 {
+            log.push(index.to_string())
+        }
+        assert_eq!(log.recent(20).len(), MAX_LINES);
+        assert_eq!(log.recent(1), vec!["19"]);
     }
-    assert_eq!(log.recent(20).len(), MAX_LINES);
-    assert_eq!(log.recent(1), vec!["19"]);
-  }
 }
